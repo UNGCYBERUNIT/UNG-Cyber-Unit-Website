@@ -3248,10 +3248,12 @@ export default {
     // u/:username — public profile view; validity/privacy is resolved client-side
     // via /api/user/:username, same pattern as quiz/:code.
     const publicProfilePageMatch = path.match(/^\/u\/[a-zA-Z0-9_]+$/);
-    // verify/:code — static trust page for the Discord bot's pwn.college account-link
-    // codes. The trailing segment is a random hex string; it is never read or
-    // validated — any well-formed code serves the same page (see
-    // ungcyberunit-verify-handoff.md).
+    // verify/:code — static trust page for the UNG Cyber Unit Discord bot's
+    // pwn.college account-link codes (bot repo: J-Acklen/cyber_discord_bot). The
+    // trailing segment is a random hex string the bot has the member paste into
+    // their pwn.college profile; the bot only reads it back from pwn.college and
+    // never fetches this URL. It is never read or validated here — any
+    // well-formed code serves the same page.
     const verifyPageMatch = path.match(/^\/verify\/[a-zA-Z0-9]+$/);
 
     let assetPath = null;
