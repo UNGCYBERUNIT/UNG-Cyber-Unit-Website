@@ -3239,7 +3239,6 @@ export default {
       '/announcements': '/announcements',
       '/contact': '/contact',
       '/student-hub': '/student-hub',
-      '/test': '/test',
     };
 
     // topic/:id — any path matching /topic/<something>
