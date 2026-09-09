@@ -3248,6 +3248,11 @@ export default {
     // u/:username — public profile view; validity/privacy is resolved client-side
     // via /api/user/:username, same pattern as quiz/:code.
     const publicProfilePageMatch = path.match(/^\/u\/[a-zA-Z0-9_]+$/);
+    // verify/:code — static trust page for the Discord bot's pwn.college account-link
+    // codes. The trailing segment is a random hex string; it is never read or
+    // validated — any well-formed code serves the same page (see
+    // ungcyberunit-verify-handoff.md).
+    const verifyPageMatch = path.match(/^\/verify\/[a-zA-Z0-9]+$/);
 
     let assetPath = null;
     if (viewRoutes[path] !== undefined) {
@@ -3258,6 +3263,8 @@ export default {
       assetPath = '/quiz-room';
     } else if (publicProfilePageMatch) {
       assetPath = '/u';
+    } else if (verifyPageMatch) {
+      assetPath = '/verify';
     } else if (path === '/sop') {
       assetPath = '/Cyber_Unit_SOP.pdf';
     } else if (path === '/feedback') {

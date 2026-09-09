@@ -1712,6 +1712,27 @@ describe('GET /u/:username (public profile shell)', () => {
   });
 });
 
+describe('GET /verify/:code (Discord bot account-link trust page)', () => {
+  test('should serve the noindex verify page for any well-formed code', async () => {
+    const res = await worker.fetch(new Request('https://example.com/verify/a1b2c3d4'), { ASSETS: mockAssets() });
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('Content-Type'), /text\/html/);
+    const body = await res.text();
+    assert.match(body, /<meta name="robots" content="noindex">/);
+  });
+
+  test('should serve the same page regardless of the code value', async () => {
+    const a = await (await worker.fetch(new Request('https://example.com/verify/deadbeef'), { ASSETS: mockAssets() })).text();
+    const b = await (await worker.fetch(new Request('https://example.com/verify/ff00ff00'), { ASSETS: mockAssets() })).text();
+    assert.equal(a, b);
+  });
+
+  test('should 404 for a code with illegal characters', async () => {
+    const res = await worker.fetch(new Request('https://example.com/verify/bad%20code'), { ASSETS: mockAssets() });
+    assert.equal(res.status, 404);
+  });
+});
+
 describe('GET /sop (SOP PDF via the canonical route)', () => {
   test('should serve the PDF with the right content type', async () => {
     const res = await worker.fetch(new Request('https://example.com/sop'), { ASSETS: mockAssets() });
