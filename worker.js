@@ -3253,8 +3253,9 @@ export default {
     // trailing segment is a random hex string the bot has the member paste into
     // their pwn.college profile; the bot only reads it back from pwn.college and
     // never fetches this URL. It is never read or validated here — any
-    // well-formed code serves the same page.
-    const verifyPageMatch = path.match(/^\/verify\/[a-zA-Z0-9]+$/);
+    // well-formed code serves the same page. Optional trailing slash so a human
+    // who fat-fingers `/verify/<code>/` still lands on the trust page, not a 404.
+    const verifyPageMatch = path.match(/^\/verify\/[a-zA-Z0-9]+\/?$/);
 
     let assetPath = null;
     if (viewRoutes[path] !== undefined) {

@@ -1727,6 +1727,12 @@ describe('GET /verify/:code (Discord bot account-link trust page)', () => {
     assert.equal(a, b);
   });
 
+  test('should tolerate a trailing slash after the code', async () => {
+    const res = await worker.fetch(new Request('https://example.com/verify/a1b2c3d4/'), { ASSETS: mockAssets() });
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('Content-Type'), /text\/html/);
+  });
+
   test('should 404 for a code with illegal characters', async () => {
     const res = await worker.fetch(new Request('https://example.com/verify/bad%20code'), { ASSETS: mockAssets() });
     assert.equal(res.status, 404);
