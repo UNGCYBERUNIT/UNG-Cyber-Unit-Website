@@ -16,6 +16,15 @@ binding      = "DB"
 database_name = "cyber-unit-db"
 database_id  = "30fcf0cc-9912-430e-a8d2-54b9dec9ba1a"
 
+# Discord OAuth client ID (see docs/plan-discord-pairing.md) — not sensitive,
+# it's embedded in the public OAuth authorize URL regardless, so it lives
+# here rather than as a secret. DISCORD_CLIENT_SECRET does NOT go here —
+# that's `wrangler secret put DISCORD_CLIENT_SECRET`.
+# Same application as the bot's DISCORD_TOKEN — Discord's Application ID
+# and OAuth2 Client ID are the same snowflake, so this is the bot's own id.
+[vars]
+DISCORD_CLIENT_ID = "1547010558862037124"
+
 # .edu student-verification emails (see /api/auth/verify-email/request in
 # worker.js) send via the Resend HTTP API rather than Cloudflare's own Email
 # Sending product (paid) — no binding needed, just the RESEND_API_KEY secret

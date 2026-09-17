@@ -17,13 +17,20 @@ CREATE TABLE IF NOT EXISTS users (
   is_ung_student            INTEGER NOT NULL DEFAULT 0,
   password_reset_token_hash   TEXT,
   password_reset_expires_at   INTEGER,
-  password_reset_last_sent_at INTEGER
+  password_reset_last_sent_at INTEGER,
+  discord_id         TEXT,
+  discord_username   TEXT,
+  discord_linked_at  INTEGER
 );
 
 -- Verified email must uniquely identify one account (not currently tied to
 -- any role — see CLAUDE.md; is_ung_student above is dormant, reserved for a
 -- future feature, not referenced by any code).
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email) WHERE email IS NOT NULL;
+
+-- A Discord account can only ever be linked to one website account (see
+-- docs/plan-discord-pairing.md). Same partial-unique-index shape as email.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_discord_id ON users(discord_id) WHERE discord_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS quiz_results (
   user_id    INTEGER NOT NULL,

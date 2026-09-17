@@ -2409,14 +2409,25 @@ async function loadProfileAccount() {
               ? `Other members can view your profile at <code>/u/${escHtml(profile.username)}</code>`
               : 'Only you can see your profile'}</span>
           </span>
+        </div>
+        <div class="profile-discord">
+          <strong>Discord</strong>
+          <span id="discordStatusText">${profile.discordLinked
+            ? `Linked as <code>${escHtml(profile.discordUsername)}</code>`
+            : 'Not linked'}</span>
+          ${profile.discordLinked
+            ? '<button type="button" class="btn btn-sm" id="discordUnlinkBtn">Unlink</button>'
+            : '<a class="btn btn-sm" href="/api/discord/link/start" id="discordLinkBtn">Link Discord</a>'}
         </div>` : ''}
       </div>`;
 
     wireAvatarControls();
     wireVisibilityToggle(profile.username);
+    wireDiscordControls();
     renderProfileRoomHistory(profile.roomAttempts ?? []);
     renderProfileBadges(profile.badges ?? []);
     renderEmailVerification(profile);
+    renderDiscordBanner();
   } catch {
     accountWrap.innerHTML = `<p style="color:var(--danger);font-family:'Share Tech Mono',monospace;">Failed to load account info.</p>`;
     if (historyWrap) historyWrap.innerHTML = `<p style="color:var(--danger);font-family:'Share Tech Mono',monospace;">Failed to load quiz room history.</p>`;
@@ -2569,6 +2580,58 @@ function wireVisibilityToggle(username) {
       toggle.disabled = false;
     }
   });
+}
+
+// The "Link Discord" control is a plain `<a href>` navigating to
+// /api/discord/link/start (must be a real top-level navigation, not a
+// fetch() — Discord's own login/consent page can't render inside an XHR
+// response), so there's nothing to wire for it. Only "Unlink" needs a
+// listener.
+function wireDiscordControls() {
+  const unlinkBtn = document.getElementById('discordUnlinkBtn');
+  if (!unlinkBtn) return;
+
+  unlinkBtn.addEventListener('click', async () => {
+    unlinkBtn.disabled = true;
+    try {
+      const res = await fetch('/api/discord/unlink', { method: 'POST' });
+      if (!res.ok) throw new Error();
+      await loadProfileAccount(); // re-render the Discord section back to "Not linked"
+    } catch {
+      const statusText = document.getElementById('discordStatusText');
+      if (statusText) statusText.textContent = 'Could not unlink — please try again.';
+      unlinkBtn.disabled = false;
+    }
+  });
+}
+
+// Handles the ?discord=linked / ?discord=error / ?discord=duplicate landing
+// state from /api/discord/callback's redirect, reusing the same generic
+// feedback banner element as renderEmailVerification's verified/reset
+// states. Strips the query param afterward so a page refresh doesn't
+// re-show a stale banner.
+function renderDiscordBanner() {
+  const banner = document.getElementById('emailVerifyBanner');
+  if (!banner || banner.dataset.shown) return;
+
+  const params = new URLSearchParams(window.location.search);
+  const discord = params.get('discord');
+  if (!discord) return;
+
+  if (discord === 'linked') {
+    banner.textContent = '✅ Discord linked!';
+    banner.style.color = 'var(--accent)';
+  } else if (discord === 'duplicate') {
+    banner.textContent = 'That Discord account is already linked to a different member.';
+  } else {
+    banner.textContent = 'Something went wrong linking Discord — please try again.';
+  }
+  banner.hidden = false;
+  banner.dataset.shown = '1';
+
+  params.delete('discord');
+  const newSearch = params.toString();
+  window.history.replaceState({}, '', window.location.pathname + (newSearch ? `?${newSearch}` : ''));
 }
 
 function wireAvatarControls() {

@@ -1,3 +1,13 @@
 # Copy this file to .dev.vars for local development secrets.
 # .dev.vars is gitignored and read automatically by `wrangler dev`.
 JWT_SECRET=change-this-to-a-long-random-string-at-least-32-chars
+
+# Discord OAuth (see docs/plan-discord-pairing.md). DISCORD_CLIENT_ID itself
+# is not sensitive and lives in wrangler.toml's [vars] instead - only the
+# secret half goes here.
+DISCORD_CLIENT_SECRET=get-this-from-the-discord-developer-portal-oauth2-tab
+
+# Shared secret the Discord bot presents (as an X-Bot-Secret header) to the
+# /api/bot/* endpoints. Same value goes in the bot's own .env as
+# WEBSITE_API_SECRET - generate with `openssl rand -hex 32`.
+BOT_API_SECRET=change-this-to-a-long-random-string
