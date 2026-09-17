@@ -130,6 +130,7 @@ cybersec-basics/
 | `/resources` | External learning resources |
 | `/about` | Unit overview and org chart |
 | `/sop` | Cyber Unit SOP (PDF) |
+| `/log-analysis-challenge` | Log Analysis & Regex workshop — five downloadable log-hunting challenges, the slide deck, and a regex quick-reference PDF (assets under `public/challenges/log-analysis-regex/`, `Disallow`ed in robots.txt) |
 | `/instructor` | Instructor panel — create/manage Quiz Rooms, grade free responses |
 | `/student-hub` | Student-only quiz rooms — gated to the admin-assigned `student` role and above |
 | `/quiz` | **Join Room** — browse public Quiz Rooms, or enter a private room code |

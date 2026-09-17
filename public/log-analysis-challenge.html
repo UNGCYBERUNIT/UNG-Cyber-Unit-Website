@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Log Analysis & Regex Challenge — UNG Cyber Unit</title>
+  <meta name="description" content="Download the UNG Cyber Unit's Log Analysis & Regex workshop files — five hands-on log-hunting challenges with grep, sed, and awk, plus the slide deck and a printable regex quick-reference.">
+  <link rel="canonical" href="https://ungcyberunit.org/log-analysis-challenge">
+
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="UNG Cyber Unit">
+  <meta property="og:title" content="Log Analysis & Regex Challenge — UNG Cyber Unit">
+  <meta property="og:description" content="Five hands-on log-hunting challenges with grep, sed, and awk — challenge files, slides, and a regex quick-reference.">
+  <meta property="og:url" content="https://ungcyberunit.org/log-analysis-challenge">
+  <meta property="og:image" content="https://ungcyberunit.org/images/CyberUnitLogo_Transparent.png">
+  <meta property="og:image:alt" content="UNG Cyber Unit logo">
+  <meta name="twitter:card" content="summary">
+
+  <link rel="icon" href="/favicon.ico" type="image/x-icon">
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    .lac-downloads {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1rem;
+      margin: 1.5rem 0 2.5rem;
+    }
+    .lac-download-card {
+      text-decoration: none;
+      color: inherit;
+      padding: 1.25rem;
+      text-align: center;
+    }
+    .lac-download-card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(0,255,136,0.3);
+      box-shadow: 0 6px 20px rgba(0,255,136,0.07);
+      color: inherit;
+    }
+    .lac-download-icon { font-size: 1.6rem; display: block; margin-bottom: 0.5rem; }
+    .lac-download-name { font-family: 'Share Tech Mono', monospace; color: var(--accent); display: block; margin-bottom: 0.3rem; }
+    .lac-download-desc { font-size: 0.8rem; color: var(--text-muted); }
+
+    .lac-toolbox {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 0.75rem;
+      margin: 1rem 0 2.5rem;
+    }
+    .lac-tool {
+      padding: 0.9rem 1rem;
+    }
+    .lac-tool-name { font-family: 'Share Tech Mono', monospace; color: var(--accent); font-size: 0.9rem; display: block; margin-bottom: 0.25rem; }
+    .lac-tool-desc { font-size: 0.8rem; color: var(--text-muted); }
+
+    .lac-challenge {
+      margin-bottom: 1rem;
+    }
+    .lac-challenge-head {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      margin-bottom: 0.5rem;
+    }
+    .lac-challenge-num {
+      font-family: 'Share Tech Mono', monospace;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+    .lac-difficulty {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 0.7rem;
+      letter-spacing: 0.04em;
+      padding: 0.2rem 0.55rem;
+      border-radius: 3px;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      text-transform: uppercase;
+    }
+    .lac-difficulty--super-easy, .lac-difficulty--easy { border-color: rgba(0,255,136,0.4); color: var(--accent); }
+    .lac-difficulty--medium { border-color: rgba(255,189,46,0.5); color: #ffbd2e; }
+    .lac-difficulty--hard { border-color: rgba(255,68,68,0.5); color: var(--danger); }
+    .lac-challenge-title { margin: 0; font-size: 1.05rem; }
+    .lac-challenge-desc { color: var(--text-muted); margin: 0.4rem 0 0.6rem; font-size: 0.9rem; }
+    .lac-target-file {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 0.4rem;
+      font-size: 0.8rem;
+    }
+    .lac-target-label { color: var(--text-muted); }
+    .lac-target-name {
+      font-family: 'Share Tech Mono', monospace;
+      background: #1a1a1a;
+      border-left: 3px solid var(--accent);
+      padding: 0.15rem 0.5rem;
+      border-radius: 0 3px 3px 0;
+      color: var(--accent);
+    }
+    .lac-next {
+      margin-top: 2.5rem;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ─── Navbar ──────────────────────────────────────────── -->
+  <nav class="navbar" role="navigation" aria-label="Main navigation">
+    <div class="container">
+      <a href="/" class="navbar-logo"><img src="/images/CyberUnitLogo_Transparent.png" alt="CyberUnit @ UNG" class="navbar-logo-img"><span class="navbar-logo-text">[ CyberUnit @ UNG ]</span></a>
+      <button class="hamburger" id="hamburger" aria-label="Toggle navigation" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
+      <ul class="navbar-links" id="navLinks">
+        <li><a href="/">Home</a></li>
+        <li><a href="/resources">Resources</a></li>
+        <li><a href="/about">About</a></li>
+        <li id="authNavItem"></li>
+      </ul>
+    </div>
+  </nav>
+
+  <main class="page-body">
+    <div class="container" style="max-width: 900px; padding: 2rem 1rem;">
+
+      <header style="margin-bottom: 1.5rem;">
+        <h1>// Log Analysis &amp; Regex Challenge</h1>
+        <p style="color: var(--text-muted); font-family: 'Share Tech Mono', monospace; font-size: 0.85rem; margin: 0.4rem 0 0;">
+          Every attacker leaves a trail — grep, sed, and awk are how you find it. Five hands-on
+          log-hunting challenges from the UNG Cyber Unit workshop, ramping from "open the file" to
+          "chain five commands and don't give up."
+        </p>
+      </header>
+
+      <section class="instructor-section">
+        <h2 class="instructor-section-heading">// Download</h2>
+        <div class="lac-downloads">
+          <a class="card lac-download-card" href="/challenges/log-analysis-regex/Log_Analysis_Challenge_Files.zip" download>
+            <span class="lac-download-icon" aria-hidden="true">🗂️</span>
+            <span class="lac-download-name">Challenge Files (.zip)</span>
+            <span class="lac-download-desc">The 5 target logs used below</span>
+          </a>
+          <a class="card lac-download-card" href="/challenges/log-analysis-regex/linux-regex-quick-reference.pdf" download>
+            <span class="lac-download-icon" aria-hidden="true">📄</span>
+            <span class="lac-download-name">Regex Quick Reference (.pdf)</span>
+            <span class="lac-download-desc">Printable command &amp; syntax cheat-sheet</span>
+          </a>
+          <a class="card lac-download-card" href="/challenges/log-analysis-regex/log-analysis-regex.pptx" download>
+            <span class="lac-download-icon" aria-hidden="true">🖥️</span>
+            <span class="lac-download-name">Workshop Slides (.pptx)</span>
+            <span class="lac-download-desc">Full walkthrough these challenges are drawn from</span>
+          </a>
+        </div>
+      </section>
+
+      <section class="instructor-section">
+        <h2 class="instructor-section-heading">// Your Toolbox</h2>
+        <p style="color: var(--text-muted); font-size: 0.9rem; margin: 0.5rem 0 0;">
+          Seven commands, endless combinations. Full syntax and examples for each are in the
+          quick-reference PDF above.
+        </p>
+        <div class="lac-toolbox">
+          <div class="card lac-tool">
+            <span class="lac-tool-name">strings</span>
+            <span class="lac-tool-desc">Pull readable text out of binary or garbled data</span>
+          </div>
+          <div class="card lac-tool">
+            <span class="lac-tool-name">grep</span>
+            <span class="lac-tool-desc">Search text for lines matching a pattern</span>
+          </div>
+          <div class="card lac-tool">
+            <span class="lac-tool-name">sed</span>
+            <span class="lac-tool-desc">Stream editor — find/replace, extract with capture groups</span>
+          </div>
+          <div class="card lac-tool">
+            <span class="lac-tool-name">awk</span>
+            <span class="lac-tool-desc">Split lines into columns, filter and compute on them</span>
+          </div>
+          <div class="card lac-tool">
+            <span class="lac-tool-name">cut / sort / uniq</span>
+            <span class="lac-tool-desc">Slice columns, order output, collapse duplicates and count them</span>
+          </div>
+          <div class="card lac-tool">
+            <span class="lac-tool-name">wc -l</span>
+            <span class="lac-tool-desc">Count lines — great for turning a search into a number</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="instructor-section">
+        <h2 class="instructor-section-heading">// The Challenges</h2>
+        <p style="color: var(--text-muted); font-size: 0.9rem; margin: 0.5rem 0 1rem;">
+          Every file is realistic and every answer is verifiable — no trick questions, just regex.
+          Work in teams; each file below is inside the Challenge Files download.
+        </p>
+
+        <div class="card lac-challenge">
+          <div class="lac-challenge-head">
+            <span class="lac-challenge-num">01</span>
+            <span class="lac-difficulty lac-difficulty--super-easy">Super Easy</span>
+          </div>
+          <h3 class="lac-challenge-title">Find the Successful Root Logon</h3>
+          <p class="lac-challenge-desc">
+            This capture has several login attempts mixed into a raw binary dump. Most fail. One
+            succeeds and drops into a shell. Find the frame that shows a SUCCESSFUL root logon —
+            no regex required.
+          </p>
+          <span class="lac-target-file"><span class="lac-target-label">Target file:</span> <span class="lac-target-name">frame_capture.bin</span></span>
+        </div>
+
+        <div class="card lac-challenge">
+          <div class="lac-challenge-head">
+            <span class="lac-challenge-num">02</span>
+            <span class="lac-difficulty lac-difficulty--easy">Easy</span>
+          </div>
+          <h3 class="lac-challenge-title">Identify the Flooding IP</h3>
+          <p class="lac-challenge-desc">
+            This firewall log shows a flood of authentication attempts from numerous different IP
+            addresses. One IP is hammering it far harder than the rest. Find that IP's address
+            (column 4).
+          </p>
+          <span class="lac-target-file"><span class="lac-target-label">Target file:</span> <span class="lac-target-name">auth_events.log</span></span>
+        </div>
+
+        <div class="card lac-challenge">
+          <div class="lac-challenge-head">
+            <span class="lac-challenge-num">03</span>
+            <span class="lac-difficulty lac-difficulty--medium">Medium</span>
+          </div>
+          <h3 class="lac-challenge-title">Count a User's Ping Attempts</h3>
+          <p class="lac-challenge-desc">
+            This is a command-audit log of everything every user ran. Find out how many separate
+            lines show the user <code>jdoe</code> attempting to ping a server — of any kind, to
+            any target.
+          </p>
+          <span class="lac-target-file"><span class="lac-target-label">Target file:</span> <span class="lac-target-name">command_audit.log</span></span>
+        </div>
+
+        <div class="card lac-challenge">
+          <div class="lac-challenge-head">
+            <span class="lac-challenge-num">04</span>
+            <span class="lac-difficulty lac-difficulty--medium">Medium</span>
+          </div>
+          <h3 class="lac-challenge-title">Count the Unique SQLi Attackers</h3>
+          <p class="lac-challenge-desc">
+            This is a web server access log. Somewhere in the noise, a handful of IPs are throwing
+            SQL injection payloads at the login and search forms. How many UNIQUE IP addresses are
+            responsible?
+          </p>
+          <span class="lac-target-file"><span class="lac-target-label">Target file:</span> <span class="lac-target-name">access.log</span></span>
+        </div>
+
+        <div class="card lac-challenge">
+          <div class="lac-challenge-head">
+            <span class="lac-challenge-num">05</span>
+            <span class="lac-difficulty lac-difficulty--hard">Hard</span>
+          </div>
+          <h3 class="lac-challenge-title">Find the Beacon, Then Decode It</h3>
+          <p class="lac-challenge-desc">
+            About 20 hosts are sending SEQ / PAYLOAD tags hidden across the User-Agent, request
+            path, and Referer fields. Only ONE is a real exfil channel, the rest are decoys with
+            garbage payloads. Figure out which host is real, reassemble its fragments IN ORDER,
+            and decode the hidden message.
+          </p>
+          <span class="lac-target-file"><span class="lac-target-label">Target file:</span> <span class="lac-target-name">access_exfil.log</span></span>
+        </div>
+      </section>
+
+      <section class="instructor-section lac-next">
+        <h2 class="instructor-section-heading">// Continue the Hunt</h2>
+        <p style="color: var(--text-muted); font-size: 0.9rem; margin: 0.5rem 0 0;">
+          Once you've got grep, sed, and awk in hand, put them to work on a full guided challenge
+          from the CyLab Security Academy library:
+          <a href="https://learn.cylabacademy.org/library/527" target="_blank" rel="noopener noreferrer">learn.cylabacademy.org/library/527 ↗</a>
+        </p>
+      </section>
+
+    </div>
+  </main>
+
+  <script type="module" src="/js/main.js"></script>
+</body>
+</html>

@@ -3178,6 +3178,9 @@ export default {
         // the canonical /sop URL with no way to signal a canonical (PDFs can't
         // carry a <link rel="canonical">). Keep crawlers off the raw file.
         'Disallow: /Cyber_Unit_SOP.pdf',
+        // Downloadable workshop assets (zip/pdf/pptx) linked from
+        // /log-analysis-challenge — not standalone content pages worth indexing.
+        'Disallow: /challenges/',
         '',
         'Sitemap: https://ungcyberunit.org/sitemap.xml',
         '',
@@ -3190,7 +3193,7 @@ export default {
     // Generated from the topics list so it stays in sync as topics are added.
     if (path === '/sitemap.xml') {
       const base = 'https://ungcyberunit.org';
-      const paths = ['/', '/start', '/about', '/resources', '/sop', ...topics.map(t => `/topic/${t.id}`)];
+      const paths = ['/', '/start', '/about', '/resources', '/sop', '/log-analysis-challenge', ...topics.map(t => `/topic/${t.id}`)];
       const body = `<?xml version="1.0" encoding="UTF-8"?>\n`
         + `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n`
         + paths.map(p => `  <url><loc>${base}${p}</loc></url>`).join('\n')
@@ -3239,6 +3242,7 @@ export default {
       '/announcements': '/announcements',
       '/contact': '/contact',
       '/student-hub': '/student-hub',
+      '/log-analysis-challenge': '/log-analysis-challenge',
     };
 
     // topic/:id — any path matching /topic/<something>

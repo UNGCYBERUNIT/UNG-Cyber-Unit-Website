@@ -1747,6 +1747,14 @@ describe('GET /sop (SOP PDF via the canonical route)', () => {
   });
 });
 
+describe('GET /log-analysis-challenge (workshop challenge page)', () => {
+  test('should serve the page with the right content type', async () => {
+    const res = await worker.fetch(new Request('https://example.com/log-analysis-challenge'), { ASSETS: mockAssets() });
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('Content-Type'), /text\/html/);
+  });
+});
+
 describe('Unknown routes', () => {
   test('should 404 for a nonsense path', async () => {
     const res = await worker.fetch(new Request('https://example.com/this-page-does-not-exist'), { ASSETS: mockAssets() });
