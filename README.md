@@ -95,6 +95,8 @@ cybersec-basics/
 │   ├── quiz-room.html     # Student: live Quiz Room attempt
 │   ├── profile.html, u.html    # Own profile / another member's public profile
 │   ├── leaderboard.html, announcements.html, contact.html  # Other member-facing pages
+│   ├── log-analysis-challenge.html  # Downloadable workshop: challenge files, slides, regex cheat-sheet
+│   ├── challenges/log-analysis-regex/  # Static downloads for the page above (zip/pdf/pptx) — `Disallow`ed in robots.txt
 │   ├── css/               # Global stylesheet
 │   ├── images/            # Topic images
 │   └── js/                # Client-side scripts
@@ -102,7 +104,8 @@ cybersec-basics/
 │       ├── start.js          # /start pathway page enhancement
 │       └── topic-render.js  # Isomorphic: topic lesson-content renderer, imported by both worker.js and main.js
 ├── worker.js              # Cloudflare Worker — the only entry point: routing, API, auth, security headers
-├── schema.sql              # D1 schema (users [incl. role/streak/last_active/is_public], quiz_results, quiz_rooms, quiz_room_questions, quiz_room_attempts, quiz_room_answers, announcements, feedback, and the room_lookup_failures/feedback_rate_limit/email_action_rate_limit/signup_rate_limit sliding-window rate-limit tables)
+├── schema.sql              # D1 schema (users [incl. role/streak/last_active/is_public], quiz_results, quiz_rooms, quiz_room_questions, quiz_room_attempts, quiz_room_answers, announcements, feedback, challenge_answer_keys, and the room_lookup_failures/feedback_rate_limit/email_action_rate_limit/signup_rate_limit sliding-window rate-limit tables)
+├── answer-keys/            # (gitignored) local source files for challenge_answer_keys — never committed, re-ingest via `wrangler d1 execute --file`
 ├── test/worker.test.mjs    # Unit tests (see Tests below)
 ├── wrangler.toml           # Cloudflare Workers configuration
 └── package.json
@@ -130,7 +133,7 @@ cybersec-basics/
 | `/resources` | External learning resources |
 | `/about` | Unit overview and org chart |
 | `/sop` | Cyber Unit SOP (PDF) |
-| `/log-analysis-challenge` | Log Analysis & Regex workshop — five downloadable log-hunting challenges, the slide deck, and a regex quick-reference PDF (assets under `public/challenges/log-analysis-regex/`, `Disallow`ed in robots.txt) |
+| `/log-analysis-challenge` | Log Analysis & Regex workshop — five downloadable log-hunting challenges, the slide deck, and a regex quick-reference PDF (assets under `public/challenges/log-analysis-regex/`, `Disallow`ed in robots.txt). Instructors/admins also see a link to the answer key, served from `/api/challenges/:id/answer-key` above. |
 | `/instructor` | Instructor panel — create/manage Quiz Rooms, grade free responses |
 | `/student-hub` | Student-only quiz rooms — gated to the admin-assigned `student` role and above |
 | `/quiz` | **Join Room** — browse public Quiz Rooms, or enter a private room code |
@@ -148,6 +151,7 @@ cybersec-basics/
 |-------|-------------|
 | `/api/topics` | JSON list of all topics (summary) |
 | `/api/topic/:id` | JSON data for a single topic |
+| `/api/challenges/:id/answer-key` | Instructor+ only — downloads a challenge's answer key from D1 (`challenge_answer_keys` table), never a `public/` static asset since this repo is public on GitHub |
 | `/api/auth/register`, `/api/auth/login`, `/api/auth/logout`, `/api/auth/me` | Account auth. `/api/auth/me` also reports `hasUnreadAnnouncements` (always `false` for guests) — drives the nav badge. |
 | `/api/auth/guest` (POST) | Create a throwaway guest account (role `guest`, 2-hour session, no password) |
 | `/api/auth/upgrade` (POST) | Guest-only — converts the caller's own guest row into a real account in place (same id; new username/password; role → `member`), so progress carries over with no migration step |
