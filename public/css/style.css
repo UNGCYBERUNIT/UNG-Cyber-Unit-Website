@@ -1577,6 +1577,18 @@ footer {
   gap: 0.75rem;
 }
 
+/* Discord invite: a real .btn (border/padding/hover), not a plain nav link —
+   opt out of .navbar-links a's uppercase/letter-spacing/underline styling,
+   same pattern as .navbar-username below. */
+.navbar-links a.navbar-discord-btn {
+  text-transform: none;
+  letter-spacing: normal;
+  padding: 0.4rem 0.9rem;
+}
+.navbar-links a.navbar-discord-btn::after {
+  display: none;
+}
+
 /* Username link: keeps its own face but inherits the animated ::after
    underline from .navbar-links a — no text-decoration underline on top */
 .navbar-links a.navbar-username {

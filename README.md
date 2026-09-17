@@ -8,6 +8,9 @@ Covers beginner cybersecurity topics with quizzes, an about page with the unit's
 
 Built with **Cloudflare Workers**, **D1**, and vanilla HTML/CSS/JS.
 
+The navbar's **Discord** button (every page) links to the unit's invite:
+[discord.gg/BjU632E7sV](https://discord.gg/BjU632E7sV).
+
 ---
 
 ## Topics Covered
@@ -144,6 +147,7 @@ cybersec-basics/
 | `/announcements` | Unit newsletter — signed-in members only (guests explicitly excluded, unlike most of the site). Sortable (Newest/Oldest/A-Z/Z-A cycle button) and searchable by title/date. Admins get inline create/edit/delete. |
 | `/contact` | Contact Us — public feedback form (rate-limited, no login required) plus direct unit contact info |
 | `/admin` | Admin panel — user/role management; click a username to open their `/u/:username` profile |
+| `/verify/:code` | Trust page for the UNG Cyber Unit Discord bot's pwn.college account-link codes (bot repo: `J-Acklen/cyber_discord_bot`) — unrelated to the navbar Discord invite link. `noindex`, not in the sitemap. |
 
 ### API
 
