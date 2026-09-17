@@ -1970,28 +1970,15 @@ async function initLeaderboardPage() {
 // ─── Announcements ──────────────────────────────────────────────────────────
 
 async function initAnnouncementsPage() {
-  const gate = document.getElementById('loginGate');
-  const gateMsg = document.getElementById('loginGateMsg');
   const content = document.getElementById('announcementsContent');
 
-  // Signed-out and guest accounts both see the gate — guests are logged in
-  // but explicitly excluded from this member-only content, unlike most of
-  // the site where a guest session is treated the same as a real member.
-  if (!currentUser || currentUser.role === 'guest') {
-    if (gateMsg) {
-      gateMsg.textContent = currentUser?.role === 'guest'
-        ? "Guest accounts can't view announcements — sign in with a member account."
-        : 'Sign in to view announcements.';
-    }
-    if (gate) gate.hidden = false;
-    document.getElementById('loginGateBtn')?.addEventListener('click', () => openAuthModal('login'));
-    return;
-  }
+  // Public page — viewable signed-out, as a guest, or as any member role.
   if (content) content.hidden = false;
 
   // Clear the unread badge: mark seen server-side, then update the nav
-  // in-place so it disappears without needing a page reload.
-  if (currentUser.hasUnreadAnnouncements) {
+  // in-place so it disappears without needing a page reload. Only signed-in
+  // non-guest members carry that badge/endpoint in the first place.
+  if (currentUser && currentUser.role !== 'guest' && currentUser.hasUnreadAnnouncements) {
     fetch('/api/announcements/seen', { method: 'POST' }).then(res => {
       if (res.ok) {
         currentUser.hasUnreadAnnouncements = false;

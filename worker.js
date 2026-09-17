@@ -2660,16 +2660,15 @@ export default {
     }
 
     // ── Announcements API ────────────────────────────────────────────────────
-    // Read: any signed-in non-guest member. Write: admins only — announcements
-    // are shared unit-wide content, not personal, so any admin may edit/delete
-    // any post (no per-creator ownership check, unlike Quiz Rooms).
+    // Read: public — anyone, signed in or not. Write: admins only —
+    // announcements are shared unit-wide content, not personal, so any admin
+    // may edit/delete any post (no per-creator ownership check, unlike Quiz
+    // Rooms).
     if (path.startsWith('/api/announcements')) {
       if (!env.JWT_SECRET || !env.DB) return jsonResponse({ error: 'Server not configured' }, 503);
 
-      const session = await requireRole(request, env, 'member');
-      if (session instanceof Response) return session;
-
       // GET /api/announcements — newest first; client handles sort/search.
+      // No auth required — announcements are public.
       if (path === '/api/announcements' && request.method === 'GET') {
         const { results } = await env.DB.prepare(`
           SELECT a.id, a.title, a.body, a.created_at, a.updated_at, u.username
@@ -2679,6 +2678,9 @@ export default {
         `).all();
         return jsonResponse({ results: results ?? [] });
       }
+
+      const session = await requireRole(request, env, 'member');
+      if (session instanceof Response) return session;
 
       // POST /api/announcements/seen — any signed-in non-guest member marks
       // themself caught up, clearing the unread badge (see /api/auth/me).
@@ -3370,7 +3372,7 @@ export default {
     // Generated from the topics list so it stays in sync as topics are added.
     if (path === '/sitemap.xml') {
       const base = 'https://ungcyberunit.org';
-      const paths = ['/', '/start', '/about', '/resources', '/sop', '/log-analysis-challenge', ...topics.map(t => `/topic/${t.id}`)];
+      const paths = ['/', '/start', '/about', '/resources', '/sop', '/log-analysis-challenge', '/announcements', ...topics.map(t => `/topic/${t.id}`)];
       const body = `<?xml version="1.0" encoding="UTF-8"?>\n`
         + `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n`
         + paths.map(p => `  <url><loc>${base}${p}</loc></url>`).join('\n')

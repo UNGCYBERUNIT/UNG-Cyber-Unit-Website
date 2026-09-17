@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="robots" content="noindex">
+  <meta name="description" content="News and updates from the CyberUnit @ UNG cybersecurity club.">
   <title>CyberUnit @ UNG — Announcements</title>
   <link rel="icon" href="/favicon.ico" type="image/x-icon">
   <link rel="stylesheet" href="/css/style.css">
@@ -36,14 +36,7 @@
         </p>
       </header>
 
-      <!-- Shown when not signed in, or signed in as a guest -->
-      <div id="loginGate" class="login-gate" hidden>
-        <p style="font-size:2rem;margin-bottom:0.75rem;">🔒</p>
-        <p id="loginGateMsg" style="margin-bottom:1.25rem;">Sign in to view announcements.</p>
-        <button class="btn btn-primary" id="loginGateBtn">Sign In</button>
-      </div>
-
-      <!-- Shown when signed in as a member/instructor/admin -->
+      <!-- Public: viewable signed-out, as a guest, or as any member role -->
       <div id="announcementsContent" hidden>
 
         <!-- Admin-only: create a new announcement -->
