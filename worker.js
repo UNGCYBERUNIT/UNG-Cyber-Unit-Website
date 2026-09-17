@@ -1108,7 +1108,6 @@ function notFoundResponse() {
       </button>
       <ul class="navbar-links" id="navLinks">
         <li><a href="/">Home</a></li>
-        <li><a href="/resources">Resources</a></li>
         <li><a href="/about">About</a></li>
         <li id="authNavItem"></li>
       </ul>
