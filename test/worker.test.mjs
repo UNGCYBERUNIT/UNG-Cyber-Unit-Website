@@ -1190,6 +1190,239 @@ describe('POST /api/profile/visibility', () => {
   });
 });
 
+// ─── Discord Account Pairing (docs/plan-discord-pairing.md) ─────────────────────
+
+// A mock D1 keyed by discord_id, same shape/spirit as mockPublicProfileDB
+// (keyed by username). `throwOnUpdate`, when set, simulates the partial
+// unique index rejecting a discord_id already claimed by another account.
+function mockDiscordDB(usersByDiscordId, { throwOnUpdate = false } = {}) {
+  return {
+    prepare(sql) {
+      // Same shape as this repo's own mockDB(): statements are usable both
+      // as `.bind(...).first/all/run()` and, for parameter-less queries,
+      // directly as `.first/all/run()` on the prepare() result itself.
+      const exec = (bindings) => ({
+        first: async () => {
+          if (/FROM users WHERE discord_id = \?/.test(sql)) {
+            return usersByDiscordId[bindings?.[0]] ?? null;
+          }
+          if (/WHERE user_id = \?/.test(sql)) return { points: 0, count: 0 };
+          return null;
+        },
+        all: async () => {
+          if (/topic_id FROM quiz_results/.test(sql)) return { results: [] };
+          if (/discord_id IS NOT NULL/.test(sql)) {
+            return { results: Object.values(usersByDiscordId).map(u => ({ id: u.id, discord_id: u.discord_id })) };
+          }
+          return { results: [] };
+        },
+        run: async () => {
+          if (throwOnUpdate && /UPDATE users SET discord_id/.test(sql)) {
+            throw new Error('UNIQUE constraint failed: users.discord_id');
+          }
+          return { meta: { last_row_id: 1, changes: 1 } };
+        },
+      });
+      return { bind: (...bindings) => exec(bindings), ...exec(null) };
+    },
+  };
+}
+
+describe('GET /api/discord/link/start', () => {
+  const get = (env, cookie) => worker.fetch(
+    new Request('https://example.com/api/discord/link/start', { headers: cookie ? { Cookie: cookie } : {} }),
+    env,
+  );
+
+  test('should require a session', async () => {
+    const res = await get({ JWT_SECRET: SECRET, DISCORD_CLIENT_ID: 'abc123' });
+    assert.equal(res.status, 401);
+  });
+
+  test('should reject guests', async () => {
+    const cookie = await sessionCookieFor({ sub: 9, username: 'guest-abc', role: 'guest' });
+    const res = await get({ JWT_SECRET: SECRET, DISCORD_CLIENT_ID: 'abc123' }, cookie);
+    assert.equal(res.status, 403);
+  });
+
+  test('should 503 when DISCORD_CLIENT_ID is not configured', async () => {
+    const cookie = await sessionCookieFor({ sub: 1, username: 'alice', role: 'member' });
+    const res = await get({ JWT_SECRET: SECRET }, cookie);
+    assert.equal(res.status, 503);
+  });
+
+  test('should redirect to Discord with the right client_id/scope and a state JWT encoding the caller', async () => {
+    const cookie = await sessionCookieFor({ sub: 42, username: 'alice', role: 'member' });
+    const res = await get({ JWT_SECRET: SECRET, DISCORD_CLIENT_ID: 'abc123' }, cookie);
+    assert.equal(res.status, 302);
+    const location = new URL(res.headers.get('Location'));
+    assert.equal(location.origin, 'https://discord.com');
+    assert.equal(location.searchParams.get('client_id'), 'abc123');
+    assert.equal(location.searchParams.get('scope'), 'identify');
+    assert.equal(location.searchParams.get('redirect_uri'), 'https://example.com/api/discord/callback');
+    const state = location.searchParams.get('state');
+    const payload = await verifyJWT(state, SECRET);
+    assert.equal(payload.sub, 42);
+  });
+});
+
+describe('GET /api/discord/callback', () => {
+  test('should redirect to a generic error state when code/state are missing', async () => {
+    const res = await worker.fetch(
+      new Request('https://example.com/api/discord/callback'),
+      { JWT_SECRET: SECRET, DB: mockDB(), DISCORD_CLIENT_ID: 'abc123', DISCORD_CLIENT_SECRET: 'shh' },
+    );
+    assert.equal(res.status, 302);
+    assert.equal(new URL(res.headers.get('Location')).search, '?discord=error');
+  });
+
+  test('should redirect to a generic error state for an invalid/expired state param', async () => {
+    const res = await worker.fetch(
+      new Request('https://example.com/api/discord/callback?code=xyz&state=not-a-real-jwt'),
+      { JWT_SECRET: SECRET, DB: mockDB(), DISCORD_CLIENT_ID: 'abc123', DISCORD_CLIENT_SECRET: 'shh' },
+    );
+    assert.equal(res.status, 302);
+    assert.equal(new URL(res.headers.get('Location')).search, '?discord=error');
+  });
+
+  test('should exchange the code, update only the row matching state.sub, and redirect to ?discord=linked', async (t) => {
+    t.mock.method(global, 'fetch', async (input) => {
+      const requestUrl = typeof input === 'string' ? input : input.url;
+      if (requestUrl.includes('oauth2/token')) {
+        return { ok: true, json: async () => ({ access_token: 'fake-access-token' }) };
+      }
+      if (requestUrl.includes('users/@me')) {
+        return { ok: true, json: async () => ({ id: '999888777', username: 'somebody' }) };
+      }
+      throw new Error(`unexpected fetch in test: ${requestUrl}`);
+    });
+
+    const db = mockDB();
+    const state = await signJWT({ sub: 42, exp: Math.floor(Date.now() / 1000) + 300 }, SECRET);
+    const res = await worker.fetch(
+      new Request(`https://example.com/api/discord/callback?code=realcode&state=${state}`),
+      { JWT_SECRET: SECRET, DB: db, DISCORD_CLIENT_ID: 'abc123', DISCORD_CLIENT_SECRET: 'shh' },
+    );
+    assert.equal(res.status, 302);
+    assert.equal(new URL(res.headers.get('Location')).search, '?discord=linked');
+    const update = db.calls.find(c => c.op === 'run');
+    assert.match(update.sql, /UPDATE users SET discord_id = \?, discord_username = \?, discord_linked_at = \? WHERE id = \?/);
+    assert.deepEqual(update.bindings.slice(0, 2), ['999888777', 'somebody']);
+    assert.equal(update.bindings[3], 42); // scoped to state.sub, not any caller-suppliable id
+  });
+
+  test('should redirect to ?discord=duplicate when the discord_id is already claimed by another account', async (t) => {
+    t.mock.method(global, 'fetch', async (input) => {
+      const requestUrl = typeof input === 'string' ? input : input.url;
+      if (requestUrl.includes('oauth2/token')) return { ok: true, json: async () => ({ access_token: 'tok' }) };
+      if (requestUrl.includes('users/@me')) return { ok: true, json: async () => ({ id: '111', username: 'someone' }) };
+      throw new Error(`unexpected fetch in test: ${requestUrl}`);
+    });
+
+    const db = mockDiscordDB({}, { throwOnUpdate: true });
+    const state = await signJWT({ sub: 42, exp: Math.floor(Date.now() / 1000) + 300 }, SECRET);
+    const res = await worker.fetch(
+      new Request(`https://example.com/api/discord/callback?code=realcode&state=${state}`),
+      { JWT_SECRET: SECRET, DB: db, DISCORD_CLIENT_ID: 'abc123', DISCORD_CLIENT_SECRET: 'shh' },
+    );
+    assert.equal(res.status, 302);
+    assert.equal(new URL(res.headers.get('Location')).search, '?discord=duplicate');
+  });
+});
+
+describe('POST /api/discord/unlink', () => {
+  test('should require a session', async () => {
+    const res = await worker.fetch(
+      new Request('https://example.com/api/discord/unlink', { method: 'POST' }),
+      { JWT_SECRET: SECRET, DB: mockDB() },
+    );
+    assert.equal(res.status, 401);
+  });
+
+  test('should clear only the caller\'s own row', async () => {
+    const db = mockDB();
+    const cookie = await sessionCookieFor({ sub: 42, username: 'alice', role: 'member' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/discord/unlink', { method: 'POST', headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 200);
+    const update = db.calls.find(c => c.op === 'run');
+    assert.match(update.sql, /UPDATE users SET discord_id = NULL, discord_username = NULL, discord_linked_at = NULL WHERE id = \?/);
+    assert.deepEqual(update.bindings, [42]);
+  });
+});
+
+describe('GET /api/bot/progress/:discord_id', () => {
+  test('should 401 without the bot secret header', async () => {
+    const res = await worker.fetch(
+      new Request('https://example.com/api/bot/progress/999888777'),
+      { DB: mockDB(), BOT_API_SECRET: 'topsecret' },
+    );
+    assert.equal(res.status, 401);
+  });
+
+  test('should 401 with the wrong bot secret', async () => {
+    const res = await worker.fetch(
+      new Request('https://example.com/api/bot/progress/999888777', { headers: { 'X-Bot-Secret': 'wrong' } }),
+      { DB: mockDB(), BOT_API_SECRET: 'topsecret' },
+    );
+    assert.equal(res.status, 401);
+  });
+
+  test('should 404 for a discord_id with no linked account', async () => {
+    const db = mockDiscordDB({});
+    const res = await worker.fetch(
+      new Request('https://example.com/api/bot/progress/999888777', { headers: { 'X-Bot-Secret': 'topsecret' } }),
+      { DB: db, BOT_API_SECRET: 'topsecret' },
+    );
+    assert.equal(res.status, 404);
+  });
+
+  test('should return the whitelisted shape for a linked account, no private fields', async () => {
+    const db = mockDiscordDB({
+      '999888777': { id: 1, username: 'alice', role: 'member', avatar: null, streak: 3 },
+    });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/bot/progress/999888777', { headers: { 'X-Bot-Secret': 'topsecret' } }),
+      { DB: db, BOT_API_SECRET: 'topsecret' },
+    );
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.username, 'alice');
+    assert.equal(data.streak, 3);
+    assert.ok(Array.isArray(data.badges));
+    assert.ok(!('id' in data));
+    assert.ok(!('role' in data));
+    assert.ok(!('email' in data));
+  });
+});
+
+describe('GET /api/bot/pathfinder-status', () => {
+  test('should 401 without the bot secret header', async () => {
+    const res = await worker.fetch(
+      new Request('https://example.com/api/bot/pathfinder-status'),
+      { DB: mockDB(), BOT_API_SECRET: 'topsecret' },
+    );
+    assert.equal(res.status, 401);
+  });
+
+  test('should return a complete flag per linked account', async () => {
+    const db = mockDiscordDB({
+      '111': { id: 1, discord_id: '111' },
+      '222': { id: 2, discord_id: '222' },
+    });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/bot/pathfinder-status', { headers: { 'X-Bot-Secret': 'topsecret' } }),
+      { DB: db, BOT_API_SECRET: 'topsecret' },
+    );
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.users.length, 2);
+    assert.ok(data.users.every(u => typeof u.complete === 'boolean'));
+  });
+});
+
 // ─── POST /api/auth/guest ────────────────────────────────────────────────────────
 
 describe('POST /api/auth/guest', () => {

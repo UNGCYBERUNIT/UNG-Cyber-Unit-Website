@@ -107,7 +107,7 @@ cybersec-basics/
 │       ├── start.js          # /start pathway page enhancement
 │       └── topic-render.js  # Isomorphic: topic lesson-content renderer, imported by both worker.js and main.js
 ├── worker.js              # Cloudflare Worker — the only entry point: routing, API, auth, security headers
-├── schema.sql              # D1 schema (users [incl. role/streak/last_active/is_public], quiz_results, quiz_rooms, quiz_room_questions, quiz_room_attempts, quiz_room_answers, announcements, feedback, challenge_answer_keys, and the room_lookup_failures/feedback_rate_limit/email_action_rate_limit/signup_rate_limit sliding-window rate-limit tables)
+├── schema.sql              # D1 schema (users [incl. role/streak/last_active/is_public/discord_id], quiz_results, quiz_rooms, quiz_room_questions, quiz_room_attempts, quiz_room_answers, announcements, feedback, challenge_answer_keys, and the room_lookup_failures/feedback_rate_limit/email_action_rate_limit/signup_rate_limit sliding-window rate-limit tables)
 ├── answer-keys/            # (gitignored) local source files for challenge_answer_keys — never committed, re-ingest via `wrangler d1 execute --file`
 ├── test/worker.test.mjs    # Unit tests (see Tests below)
 ├── wrangler.toml           # Cloudflare Workers configuration
@@ -168,6 +168,11 @@ cybersec-basics/
 | `/api/profile/avatar` (POST/DELETE) | Logged-in user — upload/remove their own avatar image (magic-byte validated, size-capped) |
 | `/api/profile/visibility` (POST) | Logged-in user (non-guest) — toggle whether `/u/:username` is viewable by others |
 | `/api/user/:username` | Public subset of a profile (username, avatar, member-since, badges, ranks) if that user has opted in, or if the requester is an admin; `403` if private (non-admin viewer), `404` if unknown/guest |
+| `/api/discord/link/start` (GET) | Logged-in user (non-guest) — redirects to Discord's OAuth consent screen to begin linking a Discord account (see `docs/plan-discord-pairing.md`) |
+| `/api/discord/callback` (GET) | Discord's OAuth redirect target — validates a signed, short-lived `state` param, exchanges the code, links the calling session's account, then redirects to `/profile?discord=linked\|error\|duplicate` |
+| `/api/discord/unlink` (POST) | Logged-in user (non-guest) — clears the caller's own Discord link only |
+| `/api/bot/progress/:discordId` (GET) | Server-to-server only (`X-Bot-Secret` header, not a browser session) — same public-subset whitelist as `/api/user/:username`, looked up by linked Discord ID instead of username; used by the Discord bot's `/website stats` command |
+| `/api/bot/pathfinder-status` (GET) | Server-to-server only (`X-Bot-Secret`) — `{discord_id, complete}` for every linked account, used by the Discord bot's background auto-role check |
 | `/api/leaderboard?mode=modules\|rooms` | Top performers — by topic-quiz points (`modules`, default) or quiz-room points (`rooms`); guests excluded |
 | `/api/announcements` (GET) | Signed-in non-guest member — list all announcements, newest first |
 | `/api/announcements` (POST), `/api/announcements/:id` (PATCH/DELETE) | Admin only — create/edit/delete; any admin can manage any post (not creator-restricted) |

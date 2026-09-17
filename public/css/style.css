@@ -1720,6 +1720,29 @@ footer {
   color: var(--accent);
 }
 
+.profile-discord {
+  flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.85rem;
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.85rem;
+}
+.profile-discord strong {
+  color: var(--text);
+}
+#discordStatusText {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+#discordStatusText code {
+  color: var(--accent);
+}
+
 /* ─── Nav Dropdown (wrench) ──────────────────────────────── */
 .nav-dropdown {
   position: relative;

@@ -71,6 +71,20 @@ or a guest account → `404`; a real but private account → `403` (no data). Th
 links every username to `/u/:username` regardless of visibility — the private/404 state is
 resolved when that page is opened, not by hiding the link.
 
+**Discord account pairing** (see `docs/plan-discord-pairing.md`): `users.discord_id` /
+`discord_username` / `discord_linked_at`, linked via a real Discord OAuth (`identify` scope)
+flow at `/api/discord/link/start` → `/api/discord/callback` → `/api/discord/unlink` — not a
+linking-code trick, since we control both this codebase and the bot's. The OAuth `state`
+param is a short-lived signed JWT (reusing `signJWT`/`verifyJWT`, not a new signing
+mechanism) binding the callback to the session that started it — standard CSRF protection.
+Discord link status is **owner-only** (unlike the profile visibility toggle above) — it is
+never added to `/api/user/:username`'s whitelist. `/api/bot/progress/:discordId` and
+`/api/bot/pathfinder-status` are a **second** whitelist-disciplined public-ish surface for
+the Discord bot (gated by `checkBotSecret`/`X-Bot-Secret`, not a browser session) — hold
+them to the exact same "never leak more than the whitelist" bar as `/api/user/:username`.
+`idx_users_discord_id` is a partial unique index (same shape as `idx_users_email`) — a
+Discord account can only ever be linked to one website account.
+
 **Email verification (general-purpose, role-decoupled):** any signed-in non-guest member can
 confirm any email address on their account via `/api/auth/verify-email/request` +
 `/api/auth/verify-email/confirm` (worker.js) — no domain restriction, and confirming does
