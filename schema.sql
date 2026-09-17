@@ -133,4 +133,17 @@ CREATE TABLE IF NOT EXISTS signup_rate_limit (
   ip TEXT    NOT NULL,
   ts INTEGER NOT NULL
 );
+
+-- Instructor-only answer keys for downloadable challenge sets (see
+-- /log-analysis-challenge). Stored as a D1 blob rather than a public/ static
+-- asset specifically so the file never enters the (public) git repo/GitHub
+-- history — it's uploaded straight into D1, local and remote, and served
+-- only via GET /api/challenges/:id/answer-key behind requireRole('instructor').
+CREATE TABLE IF NOT EXISTS challenge_answer_keys (
+  challenge_id TEXT    PRIMARY KEY,
+  filename     TEXT    NOT NULL,
+  content_type TEXT    NOT NULL,
+  data         BLOB    NOT NULL,
+  uploaded_at  INTEGER NOT NULL
+);
 CREATE INDEX IF NOT EXISTS idx_srl_ip_ts ON signup_rate_limit (ip, ts);

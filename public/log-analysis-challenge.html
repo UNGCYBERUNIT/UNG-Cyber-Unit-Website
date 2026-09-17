@@ -267,6 +267,19 @@
         </div>
       </section>
 
+      <!-- Instructor-only; revealed by main.js after /api/auth/me confirms the
+           instructor role. The answer key itself is never a static asset (see
+           GET /api/challenges/:id/answer-key in worker.js) so it can't leak
+           via the public GitHub repo. -->
+      <section class="instructor-section" id="answerKeySection" hidden>
+        <h2 class="instructor-section-heading">// Instructor Answer Key</h2>
+        <a class="card lac-download-card" style="max-width:260px;" href="/api/challenges/log-analysis-regex/answer-key">
+          <span class="lac-download-icon" aria-hidden="true">🔑</span>
+          <span class="lac-download-name">Answer Key (.pdf)</span>
+          <span class="lac-download-desc">Instructor-only — not linked or visible to students</span>
+        </a>
+      </section>
+
       <section class="instructor-section lac-next">
         <h2 class="instructor-section-heading">// Continue the Hunt</h2>
         <p style="color: var(--text-muted); font-size: 0.9rem; margin: 0.5rem 0 0;">

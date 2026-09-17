@@ -105,6 +105,19 @@ the send is silently skipped (the `if (env.RESEND_API_KEY)` guard) so local dev 
 secret still works — `verify-email/request` and `forgot-username` degrade to a no-op send;
 `forgot-password` still stores the token either way, just doesn't email the link.
 
+**Private files that must never touch the repo (this GitHub repo is public):** any
+instructor-only asset (e.g. a challenge answer key) must NOT go in `public/` — a static asset
+is visible in the repo's file tree/history to anyone, even if no page links to it. Instead
+store it as a BLOB in D1 (see the `challenge_answer_keys` table in `schema.sql`) and serve it
+from a dedicated `/api/...` route gated by `requireRole(request, env, 'instructor')`, e.g.
+`GET /api/challenges/:id/answer-key` in worker.js. To ingest a file: hex-encode it and
+`INSERT ... VALUES (..., X'<hex>', ...)` via `wrangler d1 execute DB --local/--remote --file`
+(a `--command` string is impractical past a few KB). **Gotcha:** D1 hands back a BLOB column
+as a plain byte array, not an ArrayBuffer — wrap it in `new Uint8Array(row.data)` before
+passing to `Response()`, or it silently stringifies to `"37,80,68,70,..."` instead of sending
+real bytes (caught in code review — Content-Length was ~3.5x the real file size). Keep the
+source file itself out of the repo entirely (gitignored), since it's now living in D1.
+
 ## Verify before committing
 Run `npx wrangler dev` and actually exercise the change (repo pattern: drive it in
 headless Chrome via puppeteer-core). For DB-touching work, seed and clean rows with

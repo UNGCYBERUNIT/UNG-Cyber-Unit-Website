@@ -3222,6 +3222,33 @@ export default {
       return new Response(JSON.stringify({ ...topic, ...(topicFraming[topic.id] || {}) }), { headers });
     }
 
+    // ── API: instructor-only challenge answer keys ────────────────────────────
+    // Served from a D1 blob, never from public/ — the source repo is public on
+    // GitHub, so a static asset (even one no page links to) would leak the
+    // answers to anyone browsing the repo. See schema.sql's
+    // challenge_answer_keys table.
+    const answerKeyMatch = path.match(/^\/api\/challenges\/([a-z0-9-]+)\/answer-key$/);
+    if (answerKeyMatch) {
+      const session = await requireRole(request, env, 'instructor');
+      if (session instanceof Response) return session;
+      if (!env.DB) return jsonResponse({ error: 'Server not configured' }, 503);
+
+      const row = await env.DB.prepare(
+        'SELECT filename, content_type, data FROM challenge_answer_keys WHERE challenge_id = ?'
+      ).bind(answerKeyMatch[1]).first();
+      if (!row) return jsonResponse({ error: 'No answer key for this challenge' }, 404);
+
+      const headers = addSecurityHeaders(new Headers({
+        'Content-Type': row.content_type,
+        'Content-Disposition': `attachment; filename="${row.filename}"`,
+        'Cache-Control': 'no-store',
+      }));
+      // D1 hands back a BLOB column as a plain byte array, not an
+      // ArrayBuffer/Uint8Array — passing it straight to Response() silently
+      // stringifies it (e.g. "37,80,68,70,...") instead of sending real bytes.
+      return new Response(new Uint8Array(row.data), { headers });
+    }
+
     // ── Static assets: serve from the [assets] binding ───────────────────────
     // Pages/Workers with [assets] in wrangler.toml serves public/ automatically.
     // For HTML view routes we need to explicitly pass through to the asset binding.

@@ -31,6 +31,11 @@ Thumbs.db
 # Security audit documents
 ungcyberunit_security_remediation.md
 
+# Challenge answer keys — content lives in D1 (challenge_answer_keys table),
+# never in the repo, since this GitHub repo is public. Source files for
+# ingestion (see docs, or ask the assistant) stay local only.
+*-answer-key.pdf
+
 # Proposed-but-not-yet-built feature/curriculum plans — kept local until
 # acted on. docs/public-profile-plan.md is tracked (already built), so it
 # deliberately doesn't match this pattern.

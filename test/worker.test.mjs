@@ -1755,6 +1755,56 @@ describe('GET /log-analysis-challenge (workshop challenge page)', () => {
   });
 });
 
+describe('GET /api/challenges/:id/answer-key (instructor-only, D1-backed)', () => {
+  // Never a static asset — this data must not be servable to a signed-out
+  // visitor or leak via the (public) GitHub repo the rest of the site lives in.
+  function mockAnswerKeyDB(row) {
+    return {
+      prepare(sql) {
+        return { bind: () => ({ first: async () => (/FROM challenge_answer_keys/.test(sql) ? row : null) }) };
+      },
+    };
+  }
+
+  test('should 401 when signed out', async () => {
+    const res = await worker.fetch(
+      new Request('https://example.com/api/challenges/log-analysis-regex/answer-key'),
+      { JWT_SECRET: SECRET, DB: mockAnswerKeyDB(null) },
+    );
+    assert.equal(res.status, 401);
+  });
+
+  test('should 403 for a non-instructor role', async () => {
+    const cookie = await sessionCookieFor({ sub: 1, username: 'stu', role: 'member' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/challenges/log-analysis-regex/answer-key', { headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: mockAnswerKeyDB(null) },
+    );
+    assert.equal(res.status, 403);
+  });
+
+  test('should 404 for an unknown challenge id', async () => {
+    const cookie = await sessionCookieFor({ sub: 2, username: 'inst', role: 'instructor' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/challenges/no-such-challenge/answer-key', { headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: mockAnswerKeyDB(null) },
+    );
+    assert.equal(res.status, 404);
+  });
+
+  test('should serve the PDF blob with a download filename for an instructor', async () => {
+    const cookie = await sessionCookieFor({ sub: 2, username: 'inst', role: 'instructor' });
+    const row = { filename: 'log-analysis-answer-key.pdf', content_type: 'application/pdf', data: new Uint8Array([1, 2, 3]) };
+    const res = await worker.fetch(
+      new Request('https://example.com/api/challenges/log-analysis-regex/answer-key', { headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: mockAnswerKeyDB(row) },
+    );
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('Content-Type'), /application\/pdf/);
+    assert.match(res.headers.get('Content-Disposition'), /attachment; filename="log-analysis-answer-key\.pdf"/);
+  });
+});
+
 describe('Unknown routes', () => {
   test('should 404 for a nonsense path', async () => {
     const res = await worker.fetch(new Request('https://example.com/this-page-does-not-exist'), { ASSETS: mockAssets() });

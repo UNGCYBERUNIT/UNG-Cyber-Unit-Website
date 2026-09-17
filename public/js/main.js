@@ -2214,6 +2214,14 @@ function initContactPage() {
   });
 }
 
+// ─── Log Analysis & Regex Challenge ────────────────────────────────────────
+
+function initLogAnalysisChallengePage() {
+  const section = document.getElementById('answerKeySection');
+  if (!section) return;
+  section.hidden = !isInstructor();
+}
+
 // ─── Student Hub ────────────────────────────────────────────────────────────
 
 async function initStudentHubPage() {
@@ -3092,5 +3100,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     initContactPage();
   } else if (window.location.pathname === '/student-hub') {
     initStudentHubPage();
+  } else if (window.location.pathname === '/log-analysis-challenge') {
+    initLogAnalysisChallengePage();
   }
 });
