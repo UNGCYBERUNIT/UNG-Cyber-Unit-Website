@@ -1475,6 +1475,17 @@ async function requireRole(request, env, minRole) {
   return session;
 }
 
+// ─── Discord OAuth origin allowlist ───────────────────────────────────────────
+// The OAuth redirect_uri is built from the request's own origin (so the same
+// code works against local dev and production without hardcoding a domain),
+// but that origin should never be trusted blindly for something as sensitive
+// as an OAuth parameter. Discord's own strict exact-match validation of
+// registered redirect URIs is the primary defense here, but this second,
+// explicit allowlist means a mismatched/unexpected origin (e.g. this Worker's
+// own *.workers.dev URL, always reachable alongside the custom domain) is
+// rejected by us too, rather than relying solely on Discord's side of it.
+const ALLOWED_OAUTH_ORIGINS = ['https://ungcyberunit.org', 'http://localhost:8787'];
+
 // ─── Discord Bot API Auth ─────────────────────────────────────────────────────
 // Shared-secret gate for the /api/bot/* endpoints the Discord bot calls
 // server-to-server (it has no browser session, so getSession/requireRole
@@ -2352,6 +2363,9 @@ export default {
     if (path === '/api/discord/link/start' && request.method === 'GET') {
       if (!env.JWT_SECRET) return jsonResponse({ error: 'Server not configured' }, 503);
       if (!env.DISCORD_CLIENT_ID) return jsonResponse({ error: 'Discord linking is not configured yet' }, 503);
+      if (!ALLOWED_OAUTH_ORIGINS.includes(url.origin)) {
+        return jsonResponse({ error: 'Discord linking is not available from this address' }, 400);
+      }
       const session = await requireRole(request, env, 'member');
       if (session instanceof Response) return session;
 
@@ -2378,6 +2392,9 @@ export default {
       if (!env.JWT_SECRET || !env.DB) return jsonResponse({ error: 'Server not configured' }, 503);
       if (!env.DISCORD_CLIENT_ID || !env.DISCORD_CLIENT_SECRET) {
         return jsonResponse({ error: 'Discord linking is not configured yet' }, 503);
+      }
+      if (!ALLOWED_OAUTH_ORIGINS.includes(url.origin)) {
+        return jsonResponse({ error: 'Discord linking is not available from this address' }, 400);
       }
 
       const code = url.searchParams.get('code');
@@ -2419,11 +2436,13 @@ export default {
           'UPDATE users SET discord_id = ?, discord_username = ?, discord_linked_at = ? WHERE id = ?'
         ).bind(discordUser.id, discordUser.username, Date.now(), statePayload.sub).run();
       } catch (err) {
-        // Most likely the partial-unique-index rejecting a discord_id already
-        // claimed by a different account — a clear, specific redirect state
-        // beats a raw 500 for something a member can actually understand.
         console.error('Discord link DB update failed:', err);
-        return Response.redirect(`${url.origin}/profile?discord=duplicate`, 302);
+        // Only claim "already linked to someone else" when the failure actually
+        // looks like the partial-unique-index rejecting a duplicate discord_id -
+        // any other DB failure (e.g. a transient outage) gets the generic error
+        // state instead, so a member isn't told something false about their account.
+        const isDuplicate = /unique/i.test(err?.message ?? '');
+        return Response.redirect(`${url.origin}/profile?discord=${isDuplicate ? 'duplicate' : 'error'}`, 302);
       }
 
       return Response.redirect(`${url.origin}/profile?discord=linked`, 302);

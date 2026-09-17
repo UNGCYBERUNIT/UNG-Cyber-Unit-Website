@@ -1195,7 +1195,7 @@ describe('POST /api/profile/visibility', () => {
 // A mock D1 keyed by discord_id, same shape/spirit as mockPublicProfileDB
 // (keyed by username). `throwOnUpdate`, when set, simulates the partial
 // unique index rejecting a discord_id already claimed by another account.
-function mockDiscordDB(usersByDiscordId, { throwOnUpdate = false } = {}) {
+function mockDiscordDB(usersByDiscordId, { throwOnUpdate = false, throwOnUpdateMessage = 'UNIQUE constraint failed: users.discord_id' } = {}) {
   return {
     prepare(sql) {
       // Same shape as this repo's own mockDB(): statements are usable both
@@ -1218,7 +1218,7 @@ function mockDiscordDB(usersByDiscordId, { throwOnUpdate = false } = {}) {
         },
         run: async () => {
           if (throwOnUpdate && /UPDATE users SET discord_id/.test(sql)) {
-            throw new Error('UNIQUE constraint failed: users.discord_id');
+            throw new Error(throwOnUpdateMessage);
           }
           return { meta: { last_row_id: 1, changes: 1 } };
         },
@@ -1230,7 +1230,7 @@ function mockDiscordDB(usersByDiscordId, { throwOnUpdate = false } = {}) {
 
 describe('GET /api/discord/link/start', () => {
   const get = (env, cookie) => worker.fetch(
-    new Request('https://example.com/api/discord/link/start', { headers: cookie ? { Cookie: cookie } : {} }),
+    new Request('https://ungcyberunit.org/api/discord/link/start', { headers: cookie ? { Cookie: cookie } : {} }),
     env,
   );
 
@@ -1251,6 +1251,21 @@ describe('GET /api/discord/link/start', () => {
     assert.equal(res.status, 503);
   });
 
+  test('should reject an origin outside the allowlist (e.g. the bare *.workers.dev URL)', async () => {
+    // Defense-in-depth beyond Discord's own strict redirect_uri matching - this
+    // Worker is always reachable at its *.workers.dev URL alongside the custom
+    // domain, so redirect_uri (built from the request's own origin) must not be
+    // trusted without an explicit allowlist on our side too.
+    const cookie = await sessionCookieFor({ sub: 1, username: 'alice', role: 'member' });
+    const res = await worker.fetch(
+      new Request('https://ung-cyber-unit-website.joshuaacklen.workers.dev/api/discord/link/start', {
+        headers: { Cookie: cookie },
+      }),
+      { JWT_SECRET: SECRET, DISCORD_CLIENT_ID: 'abc123' },
+    );
+    assert.equal(res.status, 400);
+  });
+
   test('should redirect to Discord with the right client_id/scope and a state JWT encoding the caller', async () => {
     const cookie = await sessionCookieFor({ sub: 42, username: 'alice', role: 'member' });
     const res = await get({ JWT_SECRET: SECRET, DISCORD_CLIENT_ID: 'abc123' }, cookie);
@@ -1259,7 +1274,7 @@ describe('GET /api/discord/link/start', () => {
     assert.equal(location.origin, 'https://discord.com');
     assert.equal(location.searchParams.get('client_id'), 'abc123');
     assert.equal(location.searchParams.get('scope'), 'identify');
-    assert.equal(location.searchParams.get('redirect_uri'), 'https://example.com/api/discord/callback');
+    assert.equal(location.searchParams.get('redirect_uri'), 'https://ungcyberunit.org/api/discord/callback');
     const state = location.searchParams.get('state');
     const payload = await verifyJWT(state, SECRET);
     assert.equal(payload.sub, 42);
@@ -1269,7 +1284,7 @@ describe('GET /api/discord/link/start', () => {
 describe('GET /api/discord/callback', () => {
   test('should redirect to a generic error state when code/state are missing', async () => {
     const res = await worker.fetch(
-      new Request('https://example.com/api/discord/callback'),
+      new Request('https://ungcyberunit.org/api/discord/callback'),
       { JWT_SECRET: SECRET, DB: mockDB(), DISCORD_CLIENT_ID: 'abc123', DISCORD_CLIENT_SECRET: 'shh' },
     );
     assert.equal(res.status, 302);
@@ -1278,7 +1293,7 @@ describe('GET /api/discord/callback', () => {
 
   test('should redirect to a generic error state for an invalid/expired state param', async () => {
     const res = await worker.fetch(
-      new Request('https://example.com/api/discord/callback?code=xyz&state=not-a-real-jwt'),
+      new Request('https://ungcyberunit.org/api/discord/callback?code=xyz&state=not-a-real-jwt'),
       { JWT_SECRET: SECRET, DB: mockDB(), DISCORD_CLIENT_ID: 'abc123', DISCORD_CLIENT_SECRET: 'shh' },
     );
     assert.equal(res.status, 302);
@@ -1300,7 +1315,7 @@ describe('GET /api/discord/callback', () => {
     const db = mockDB();
     const state = await signJWT({ sub: 42, exp: Math.floor(Date.now() / 1000) + 300 }, SECRET);
     const res = await worker.fetch(
-      new Request(`https://example.com/api/discord/callback?code=realcode&state=${state}`),
+      new Request(`https://ungcyberunit.org/api/discord/callback?code=realcode&state=${state}`),
       { JWT_SECRET: SECRET, DB: db, DISCORD_CLIENT_ID: 'abc123', DISCORD_CLIENT_SECRET: 'shh' },
     );
     assert.equal(res.status, 302);
@@ -1322,11 +1337,31 @@ describe('GET /api/discord/callback', () => {
     const db = mockDiscordDB({}, { throwOnUpdate: true });
     const state = await signJWT({ sub: 42, exp: Math.floor(Date.now() / 1000) + 300 }, SECRET);
     const res = await worker.fetch(
-      new Request(`https://example.com/api/discord/callback?code=realcode&state=${state}`),
+      new Request(`https://ungcyberunit.org/api/discord/callback?code=realcode&state=${state}`),
       { JWT_SECRET: SECRET, DB: db, DISCORD_CLIENT_ID: 'abc123', DISCORD_CLIENT_SECRET: 'shh' },
     );
     assert.equal(res.status, 302);
     assert.equal(new URL(res.headers.get('Location')).search, '?discord=duplicate');
+  });
+
+  test('should redirect to the generic ?discord=error (not ?discord=duplicate) for an unrelated DB failure', async (t) => {
+    // A member should never be told "this account belongs to someone else"
+    // when the real cause was something unrelated, like a transient outage.
+    t.mock.method(global, 'fetch', async (input) => {
+      const requestUrl = typeof input === 'string' ? input : input.url;
+      if (requestUrl.includes('oauth2/token')) return { ok: true, json: async () => ({ access_token: 'tok' }) };
+      if (requestUrl.includes('users/@me')) return { ok: true, json: async () => ({ id: '111', username: 'someone' }) };
+      throw new Error(`unexpected fetch in test: ${requestUrl}`);
+    });
+
+    const db = mockDiscordDB({}, { throwOnUpdate: true, throwOnUpdateMessage: 'D1_ERROR: storage caused object to be reset' });
+    const state = await signJWT({ sub: 42, exp: Math.floor(Date.now() / 1000) + 300 }, SECRET);
+    const res = await worker.fetch(
+      new Request(`https://ungcyberunit.org/api/discord/callback?code=realcode&state=${state}`),
+      { JWT_SECRET: SECRET, DB: db, DISCORD_CLIENT_ID: 'abc123', DISCORD_CLIENT_SECRET: 'shh' },
+    );
+    assert.equal(res.status, 302);
+    assert.equal(new URL(res.headers.get('Location')).search, '?discord=error');
   });
 });
 
