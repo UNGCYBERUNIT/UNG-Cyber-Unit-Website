@@ -1722,21 +1722,21 @@ describe('GET /api/user/:username', () => {
 // ─── /api/announcements ─────────────────────────────────────────────────────────
 
 describe('GET /api/announcements', () => {
-  test('should require a session', async () => {
+  test('should be readable with no session (public)', async () => {
     const res = await worker.fetch(
       new Request('https://example.com/api/announcements'),
       { JWT_SECRET: SECRET, DB: mockDB() },
     );
-    assert.equal(res.status, 401);
+    assert.equal(res.status, 200);
   });
 
-  test('should reject guests (excluded from member-only content)', async () => {
+  test('should be readable by a guest too', async () => {
     const cookie = await sessionCookieFor({ sub: 9, username: 'guest-abc', role: 'guest' });
     const res = await worker.fetch(
       new Request('https://example.com/api/announcements', { headers: { Cookie: cookie } }),
       { JWT_SECRET: SECRET, DB: mockDB() },
     );
-    assert.equal(res.status, 403);
+    assert.equal(res.status, 200);
   });
 
   for (const role of ['member', 'instructor', 'admin']) {
@@ -2043,6 +2043,152 @@ describe('GET /api/challenges/:id/answer-key (instructor-only, D1-backed)', () =
     assert.equal(res.status, 200);
     assert.match(res.headers.get('Content-Type'), /application\/pdf/);
     assert.match(res.headers.get('Content-Disposition'), /attachment; filename="log-analysis-answer-key\.pdf"/);
+  });
+});
+
+describe('GET /api/challenges/:id/progress', () => {
+  function mockProgressDB(completedParts) {
+    return {
+      prepare(sql) {
+        return {
+          bind: () => ({
+            all: async () => (/FROM challenge_completions/.test(sql)
+              ? { results: completedParts.map(part_id => ({ part_id })) }
+              : { results: [] }),
+          }),
+        };
+      },
+    };
+  }
+
+  test('should return an empty list when signed out (graceful, no error)', async () => {
+    const res = await worker.fetch(
+      new Request('https://example.com/api/challenges/log-analysis-regex/progress'),
+      { JWT_SECRET: SECRET, DB: mockProgressDB([]) },
+    );
+    assert.equal(res.status, 200);
+    assert.deepEqual((await res.json()).completed, []);
+  });
+
+  test('should return this session\'s completed part ids', async () => {
+    const cookie = await sessionCookieFor({ sub: 1, username: 'alice', role: 'member' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/challenges/log-analysis-regex/progress', { headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: mockProgressDB(['challenge-1', 'challenge-3']) },
+    );
+    assert.equal(res.status, 200);
+    assert.deepEqual((await res.json()).completed, ['challenge-1', 'challenge-3']);
+  });
+});
+
+describe('POST /api/challenges/:id/submit', () => {
+  // correctNormAnswer: the exact normalized string that counts as correct,
+  // so tests exercise the real server-side comparison instead of stubbing it.
+  function mockSubmitDB(correctNormAnswer, { rateLimited = false } = {}) {
+    const calls = [];
+    return {
+      calls,
+      prepare(sql) {
+        return {
+          bind: (...bindings) => ({
+            first: async () => {
+              if (/FROM challenge_submit_rate_limit/.test(sql)) return { n: rateLimited ? 999 : 0 };
+              if (/FROM challenge_answers/.test(sql)) {
+                calls.push({ sql, bindings });
+                return bindings[bindings.length - 1] === correctNormAnswer ? { 1: 1 } : null;
+              }
+              return null;
+            },
+            run: async () => { calls.push({ sql, bindings, op: 'run' }); return { meta: { changes: 1 } }; },
+          }),
+        };
+      },
+    };
+  }
+
+  test('should 401 when signed out', async () => {
+    const res = await worker.fetch(
+      new Request('https://example.com/api/challenges/log-analysis-regex/submit', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ partId: 'challenge-2', answer: 'x' }),
+      }),
+      { JWT_SECRET: SECRET, DB: mockSubmitDB('203.0.113.44') },
+    );
+    assert.equal(res.status, 401);
+  });
+
+  test('should 404 for an unknown challenge id', async () => {
+    const cookie = await sessionCookieFor({ sub: 1, username: 'alice', role: 'member' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/challenges/no-such-challenge/submit', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ partId: 'x', answer: 'x' }),
+      }),
+      { JWT_SECRET: SECRET, DB: mockSubmitDB('anything') },
+    );
+    assert.equal(res.status, 404);
+  });
+
+  test('should 400 for an unknown part id on a known challenge', async () => {
+    const cookie = await sessionCookieFor({ sub: 1, username: 'alice', role: 'member' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/challenges/log-analysis-regex/submit', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ partId: 'challenge-99', answer: 'x' }),
+      }),
+      { JWT_SECRET: SECRET, DB: mockSubmitDB('anything') },
+    );
+    assert.equal(res.status, 400);
+  });
+
+  test('should 400 for a blank answer', async () => {
+    const cookie = await sessionCookieFor({ sub: 1, username: 'alice', role: 'member' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/challenges/log-analysis-regex/submit', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ partId: 'challenge-2', answer: '   ' }),
+      }),
+      { JWT_SECRET: SECRET, DB: mockSubmitDB('203.0.113.44') },
+    );
+    assert.equal(res.status, 400);
+  });
+
+  test('should report incorrect for a wrong answer (never echoing the right one)', async () => {
+    const cookie = await sessionCookieFor({ sub: 1, username: 'alice', role: 'member' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/challenges/log-analysis-regex/submit', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ partId: 'challenge-2', answer: '1.2.3.4' }),
+      }),
+      { JWT_SECRET: SECRET, DB: mockSubmitDB('203.0.113.44') },
+    );
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.correct, false);
+    assert.equal(JSON.stringify(data).includes('203.0.113.44'), false);
+  });
+
+  test('should accept a correct answer case/whitespace-insensitively and record completion', async () => {
+    const cookie = await sessionCookieFor({ sub: 1, username: 'alice', role: 'member' });
+    const db = mockSubmitDB('203.0.113.44');
+    const res = await worker.fetch(
+      new Request('https://example.com/api/challenges/log-analysis-regex/submit', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ partId: 'challenge-2', answer: '  203.0.113.44  ' }),
+      }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 200);
+    assert.equal((await res.json()).correct, true);
+    const insert = db.calls.find(c => c.op === 'run' && /INSERT INTO challenge_completions/.test(c.sql));
+    assert.ok(insert, 'should have recorded a completion row');
+    assert.equal(insert.bindings[0], 1); // session.sub
+    assert.equal(insert.bindings[2], 'challenge-2');
+  });
+
+  test('should 429 when the per-user rate limit is exceeded', async () => {
+    const cookie = await sessionCookieFor({ sub: 1, username: 'alice', role: 'member' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/challenges/log-analysis-regex/submit', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ partId: 'challenge-2', answer: 'guess' }),
+      }),
+      { JWT_SECRET: SECRET, DB: mockSubmitDB('203.0.113.44', { rateLimited: true }) },
+    );
+    assert.equal(res.status, 429);
   });
 });
 

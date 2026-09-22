@@ -1534,6 +1534,46 @@ async function recordRoomLookupFailure(env, request) {
   await env.DB.prepare('DELETE FROM room_lookup_failures WHERE ts < ?').bind(now - ROOM_RL_WINDOW_MS).run();
 }
 
+// ─── Downloadable-Challenge Answer Submission ──────────────────────────────────
+// Structure only (which part ids exist per challenge) — safe to be public,
+// no answers live here. See schema.sql's challenge_answers table for those.
+const CHALLENGE_PARTS = {
+  'log-analysis-regex': ['challenge-1', 'challenge-2', 'challenge-3', 'challenge-4', 'challenge-5'],
+  'wireshark-nta': ['live-demo'],
+};
+
+const MAX_ANSWER_SUBMIT_LEN = 200;
+
+function normalizeAnswer(s) {
+  return String(s ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+const CHALLENGE_SUBMIT_RL_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
+const CHALLENGE_SUBMIT_RL_MAX = 15;                   // failed submissions per user per window
+
+// Returns a 429 Response when this user is over the limit, otherwise null.
+// Only *wrong* submissions count (mirrors checkRoomLookupLimit), so working
+// through several challenges normally never gets throttled.
+async function checkChallengeSubmitLimit(env, userId) {
+  if (!env.DB) return null;
+  const cutoff = Date.now() - CHALLENGE_SUBMIT_RL_WINDOW_MS;
+  const row = await env.DB.prepare(
+    'SELECT COUNT(*) AS n FROM challenge_submit_rate_limit WHERE user_id = ? AND ts > ?'
+  ).bind(userId, cutoff).first();
+  if ((row?.n ?? 0) >= CHALLENGE_SUBMIT_RL_MAX) {
+    return jsonResponse({ error: 'Too many attempts. Please wait a few minutes and try again.' }, 429);
+  }
+  return null;
+}
+
+async function recordChallengeSubmitFailure(env, userId) {
+  if (!env.DB) return;
+  const now = Date.now();
+  await env.DB.prepare('INSERT INTO challenge_submit_rate_limit (user_id, ts) VALUES (?, ?)')
+    .bind(userId, now).run();
+  await env.DB.prepare('DELETE FROM challenge_submit_rate_limit WHERE ts < ?').bind(now - CHALLENGE_SUBMIT_RL_WINDOW_MS).run();
+}
+
 const FEEDBACK_RL_WINDOW_MS = 60 * 60 * 1000; // 1 hour
 const FEEDBACK_RL_MAX = 5;                    // submissions per IP per window
 
@@ -3428,6 +3468,64 @@ export default {
       return new Response(new Uint8Array(row.data), { headers });
     }
 
+    // ── API: challenge progress (which parts this session has completed) ─────
+    // Any session incl. guest (matches /api/progress's pattern for topic
+    // quizzes) — returns [] rather than an error when signed out, so the
+    // page can render normally either way.
+    const progressChallengeMatch = path.match(/^\/api\/challenges\/([a-z0-9-]+)\/progress$/);
+    if (progressChallengeMatch && request.method === 'GET') {
+      if (!env.DB) return jsonResponse({ completed: [] });
+      const session = await getSession(request, env.JWT_SECRET);
+      if (!session) return jsonResponse({ completed: [] });
+      const { results } = await env.DB.prepare(
+        'SELECT part_id FROM challenge_completions WHERE user_id = ? AND challenge_id = ?'
+      ).bind(session.sub, progressChallengeMatch[1]).all();
+      return jsonResponse({ completed: (results ?? []).map(r => r.part_id) });
+    }
+
+    // ── API: submit an answer for a challenge part (auto-graded) ─────────────
+    // Correct answers live only in D1 (challenge_answers) — never in
+    // worker.js, since even a normalized/hashed short answer would be
+    // offline-crackable once it's sitting in the public GitHub repo.
+    const submitChallengeMatch = path.match(/^\/api\/challenges\/([a-z0-9-]+)\/submit$/);
+    if (submitChallengeMatch && request.method === 'POST') {
+      if (!env.DB) return jsonResponse({ error: 'Server not configured' }, 503);
+      const session = await getSession(request, env.JWT_SECRET);
+      if (!session) return jsonResponse({ error: 'Not authenticated' }, 401);
+
+      const challengeId = submitChallengeMatch[1];
+      const validParts = CHALLENGE_PARTS[challengeId];
+      if (!validParts) return jsonResponse({ error: 'Unknown challenge' }, 404);
+
+      let body;
+      try { body = await request.json(); } catch { return jsonResponse({ error: 'Invalid request body' }, 400); }
+      const { partId, answer } = body ?? {};
+      if (!validParts.includes(partId)) return jsonResponse({ error: 'Unknown challenge part' }, 400);
+      if (typeof answer !== 'string' || !answer.trim() || answer.length > MAX_ANSWER_SUBMIT_LEN) {
+        return jsonResponse({ error: 'Invalid answer' }, 400);
+      }
+
+      const limited = await checkChallengeSubmitLimit(env, session.sub);
+      if (limited) return limited;
+
+      const match = await env.DB.prepare(
+        'SELECT 1 FROM challenge_answers WHERE challenge_id = ? AND part_id = ? AND answer_norm = ?'
+      ).bind(challengeId, partId, normalizeAnswer(answer)).first();
+
+      if (!match) {
+        await recordChallengeSubmitFailure(env, session.sub);
+        return jsonResponse({ correct: false });
+      }
+
+      await env.DB.prepare(`
+        INSERT INTO challenge_completions (user_id, challenge_id, part_id, completed_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(user_id, challenge_id, part_id) DO NOTHING
+      `).bind(session.sub, challengeId, partId, Date.now()).run();
+
+      return jsonResponse({ correct: true });
+    }
+
     // ── Static assets: serve from the [assets] binding ───────────────────────
     // Pages/Workers with [assets] in wrangler.toml serves public/ automatically.
     // For HTML view routes we need to explicitly pass through to the asset binding.
@@ -3609,6 +3707,11 @@ export default {
     ctx.waitUntil(
       env.DB.prepare('DELETE FROM signup_rate_limit WHERE ts < ?')
         .bind(Date.now() - SIGNUP_RL_WINDOW_MS)
+        .run()
+    );
+    ctx.waitUntil(
+      env.DB.prepare('DELETE FROM challenge_submit_rate_limit WHERE ts < ?')
+        .bind(Date.now() - CHALLENGE_SUBMIT_RL_WINDOW_MS)
         .run()
     );
 

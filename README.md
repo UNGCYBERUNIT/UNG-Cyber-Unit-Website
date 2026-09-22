@@ -109,7 +109,7 @@ cybersec-basics/
 │       ├── start.js          # /start pathway page enhancement
 │       └── topic-render.js  # Isomorphic: topic lesson-content renderer, imported by both worker.js and main.js
 ├── worker.js              # Cloudflare Worker — the only entry point: routing, API, auth, security headers
-├── schema.sql              # D1 schema (users [incl. role/streak/last_active/is_public/discord_id], quiz_results, quiz_rooms, quiz_room_questions, quiz_room_attempts, quiz_room_answers, announcements, feedback, challenge_answer_keys, and the room_lookup_failures/feedback_rate_limit/email_action_rate_limit/signup_rate_limit sliding-window rate-limit tables)
+├── schema.sql              # D1 schema (users [incl. role/streak/last_active/is_public/discord_id], quiz_results, quiz_rooms, quiz_room_questions, quiz_room_attempts, quiz_room_answers, announcements, feedback, challenge_answer_keys, challenge_answers, challenge_completions, and the room_lookup_failures/feedback_rate_limit/email_action_rate_limit/signup_rate_limit/challenge_submit_rate_limit sliding-window rate-limit tables)
 ├── answer-keys/            # (gitignored) local source files for challenge_answer_keys — never committed, re-ingest via `wrangler d1 execute --file`
 ├── test/worker.test.mjs    # Unit tests (see Tests below)
 ├── wrangler.toml           # Cloudflare Workers configuration
@@ -159,6 +159,8 @@ cybersec-basics/
 | `/api/topics` | JSON list of all topics (summary) |
 | `/api/topic/:id` | JSON data for a single topic |
 | `/api/challenges/:id/answer-key` | Instructor+ only — downloads a challenge's answer key from D1 (`challenge_answer_keys` table), never a `public/` static asset since this repo is public on GitHub |
+| `/api/challenges/:id/progress` (GET) | Any session incl. guest — which part ids of a challenge this user has completed (`challenge_completions`); `[]` if signed out |
+| `/api/challenges/:id/submit` (POST) | Any session incl. guest — auto-graded free-text answer submission (`{partId, answer}`). Correct answers live only in D1 (`challenge_answers`), never in worker.js — even a hashed short answer would be offline-crackable once committed to this public repo. Per-user rate-limited on wrong answers (`challenge_submit_rate_limit`); records a completion on a match. |
 | `/api/auth/register`, `/api/auth/login`, `/api/auth/logout`, `/api/auth/me` | Account auth. `/api/auth/me` also reports `hasUnreadAnnouncements` (always `false` for guests) — drives the nav badge. |
 | `/api/auth/guest` (POST) | Create a throwaway guest account (role `guest`, 2-hour session, no password) |
 | `/api/auth/upgrade` (POST) | Guest-only — converts the caller's own guest row into a real account in place (same id; new username/password; role → `member`), so progress carries over with no migration step |

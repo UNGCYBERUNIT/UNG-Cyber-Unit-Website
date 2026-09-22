@@ -101,6 +101,48 @@
     .lac-next {
       margin-top: 2.5rem;
     }
+
+    .lac-progress-summary {
+      font-family: 'Share Tech Mono', monospace;
+      color: var(--accent);
+      margin-left: 0.5rem;
+    }
+    .lac-submit {
+      margin-top: 0.9rem;
+      padding-top: 0.9rem;
+      border-top: 1px solid var(--border);
+    }
+    .lac-answer-form {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .lac-answer-input {
+      flex: 1 1 200px;
+      background: #1a1a1a;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.5rem 0.7rem;
+      color: var(--text);
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 0.85rem;
+    }
+    .lac-answer-input:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    .lac-answer-feedback {
+      margin: 0.6rem 0 0;
+      font-size: 0.85rem;
+    }
+    .lac-answer-feedback--error { color: var(--danger); }
+    .lac-answer-feedback--success { color: var(--accent); }
+    .lac-completed-badge {
+      margin: 0;
+      color: var(--accent);
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 0.9rem;
+    }
   </style>
 </head>
 <body>
@@ -193,9 +235,10 @@
         <p style="color: var(--text-muted); font-size: 0.9rem; margin: 0.5rem 0 1rem;">
           Every file is realistic and every answer is verifiable — no trick questions, just regex.
           Work in teams; each file below is inside the Challenge Files download.
+          <span id="challengeProgressSummary" class="lac-progress-summary" hidden></span>
         </p>
 
-        <div class="card lac-challenge">
+        <div class="card lac-challenge" data-part-id="challenge-1">
           <div class="lac-challenge-head">
             <span class="lac-challenge-num">01</span>
             <span class="lac-difficulty lac-difficulty--super-easy">Super Easy</span>
@@ -207,9 +250,16 @@
             no regex required.
           </p>
           <span class="lac-target-file"><span class="lac-target-label">Target file:</span> <span class="lac-target-name">frame_capture.bin</span></span>
+          <div class="lac-submit">
+            <form class="lac-answer-form">
+              <input type="text" class="lac-answer-input" placeholder="Frame number (e.g. 0x0047)" aria-label="Your answer" autocomplete="off" maxlength="200">
+              <button type="submit" class="btn btn-sm">Submit</button>
+            </form>
+            <p class="lac-answer-feedback" hidden></p>
+          </div>
         </div>
 
-        <div class="card lac-challenge">
+        <div class="card lac-challenge" data-part-id="challenge-2">
           <div class="lac-challenge-head">
             <span class="lac-challenge-num">02</span>
             <span class="lac-difficulty lac-difficulty--easy">Easy</span>
@@ -221,9 +271,16 @@
             (column 4).
           </p>
           <span class="lac-target-file"><span class="lac-target-label">Target file:</span> <span class="lac-target-name">auth_events.log</span></span>
+          <div class="lac-submit">
+            <form class="lac-answer-form">
+              <input type="text" class="lac-answer-input" placeholder="IP address" aria-label="Your answer" autocomplete="off" maxlength="200">
+              <button type="submit" class="btn btn-sm">Submit</button>
+            </form>
+            <p class="lac-answer-feedback" hidden></p>
+          </div>
         </div>
 
-        <div class="card lac-challenge">
+        <div class="card lac-challenge" data-part-id="challenge-3">
           <div class="lac-challenge-head">
             <span class="lac-challenge-num">03</span>
             <span class="lac-difficulty lac-difficulty--medium">Medium</span>
@@ -235,9 +292,16 @@
             any target.
           </p>
           <span class="lac-target-file"><span class="lac-target-label">Target file:</span> <span class="lac-target-name">command_audit.log</span></span>
+          <div class="lac-submit">
+            <form class="lac-answer-form">
+              <input type="text" class="lac-answer-input" placeholder="Number of lines" aria-label="Your answer" autocomplete="off" maxlength="200">
+              <button type="submit" class="btn btn-sm">Submit</button>
+            </form>
+            <p class="lac-answer-feedback" hidden></p>
+          </div>
         </div>
 
-        <div class="card lac-challenge">
+        <div class="card lac-challenge" data-part-id="challenge-4">
           <div class="lac-challenge-head">
             <span class="lac-challenge-num">04</span>
             <span class="lac-difficulty lac-difficulty--medium">Medium</span>
@@ -249,9 +313,16 @@
             responsible?
           </p>
           <span class="lac-target-file"><span class="lac-target-label">Target file:</span> <span class="lac-target-name">access.log</span></span>
+          <div class="lac-submit">
+            <form class="lac-answer-form">
+              <input type="text" class="lac-answer-input" placeholder="Number of unique IPs" aria-label="Your answer" autocomplete="off" maxlength="200">
+              <button type="submit" class="btn btn-sm">Submit</button>
+            </form>
+            <p class="lac-answer-feedback" hidden></p>
+          </div>
         </div>
 
-        <div class="card lac-challenge">
+        <div class="card lac-challenge" data-part-id="challenge-5">
           <div class="lac-challenge-head">
             <span class="lac-challenge-num">05</span>
             <span class="lac-difficulty lac-difficulty--hard">Hard</span>
@@ -264,6 +335,13 @@
             and decode the hidden message.
           </p>
           <span class="lac-target-file"><span class="lac-target-label">Target file:</span> <span class="lac-target-name">access_exfil.log</span></span>
+          <div class="lac-submit">
+            <form class="lac-answer-form">
+              <input type="text" class="lac-answer-input" placeholder="Decoded message" aria-label="Your answer" autocomplete="off" maxlength="200">
+              <button type="submit" class="btn btn-sm">Submit</button>
+            </form>
+            <p class="lac-answer-feedback" hidden></p>
+          </div>
         </div>
       </section>
 

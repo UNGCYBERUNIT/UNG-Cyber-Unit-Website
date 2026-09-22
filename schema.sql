@@ -154,3 +154,41 @@ CREATE TABLE IF NOT EXISTS challenge_answer_keys (
   uploaded_at  INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_srl_ip_ts ON signup_rate_limit (ip, ts);
+
+-- Correct answers for downloadable-challenge parts (e.g. /log-analysis-challenge,
+-- /network-traffic-challenge), checked server-side by POST
+-- /api/challenges/:id/submit. Kept in D1 rather than worker.js — even
+-- normalized/hashed, these are short low-entropy strings (IPs, small counts,
+-- one password) that a public GitHub repo would effectively leak to offline
+-- brute-forcing. Multiple rows per (challenge_id, part_id) allow more than
+-- one accepted phrasing of the same answer.
+CREATE TABLE IF NOT EXISTS challenge_answers (
+  challenge_id TEXT NOT NULL,
+  part_id      TEXT NOT NULL,
+  answer_norm  TEXT NOT NULL,
+  PRIMARY KEY (challenge_id, part_id, answer_norm)
+);
+
+-- Which (user, challenge, part) combos a member/guest has solved — the
+-- "save completion state" this powers. Idempotent inserts (ON CONFLICT DO
+-- NOTHING in worker.js) keep the original completed_at on repeat correct
+-- submissions.
+CREATE TABLE IF NOT EXISTS challenge_completions (
+  user_id      INTEGER NOT NULL,
+  challenge_id TEXT    NOT NULL,
+  part_id      TEXT    NOT NULL,
+  completed_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, challenge_id, part_id),
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+-- Sliding-window rate limit on challenge-answer submissions (brute-force/
+-- spam guard) — only *wrong* submissions count, same "don't throttle
+-- legitimate use" shape as room_lookup_failures, but keyed by user_id since
+-- submitting requires a session rather than by IP.
+CREATE TABLE IF NOT EXISTS challenge_submit_rate_limit (
+  id      INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  ts      INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_csrl_user_ts ON challenge_submit_rate_limit (user_id, ts);

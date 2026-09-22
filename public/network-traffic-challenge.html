@@ -115,6 +115,48 @@
     .lac-next {
       margin-top: 2.5rem;
     }
+
+    .lac-progress-summary {
+      font-family: 'Share Tech Mono', monospace;
+      color: var(--accent);
+      margin-left: 0.5rem;
+    }
+    .lac-submit {
+      margin-top: 0.9rem;
+      padding-top: 0.9rem;
+      border-top: 1px solid var(--border);
+    }
+    .lac-answer-form {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .lac-answer-input {
+      flex: 1 1 200px;
+      background: #1a1a1a;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.5rem 0.7rem;
+      color: var(--text);
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 0.85rem;
+    }
+    .lac-answer-input:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    .lac-answer-feedback {
+      margin: 0.6rem 0 0;
+      font-size: 0.85rem;
+    }
+    .lac-answer-feedback--error { color: var(--danger); }
+    .lac-answer-feedback--success { color: var(--accent); }
+    .lac-completed-badge {
+      margin: 0;
+      color: var(--accent);
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 0.9rem;
+    }
   </style>
 </head>
 <body>
@@ -205,9 +247,10 @@
           Telnet (TCP port 23) sends everything — including usernames and passwords — as
           plain, unencrypted text over the network. It's still found on legacy devices and
           older lab equipment, and it's a textbook example of why NTA matters for a defender.
+          <span id="challengeProgressSummary" class="lac-progress-summary" hidden></span>
         </p>
 
-        <div class="card lac-challenge">
+        <div class="card lac-challenge" data-part-id="live-demo">
           <div class="lac-challenge-head">
             <span class="lac-difficulty lac-difficulty--easy">Live Demo</span>
           </div>
@@ -223,6 +266,13 @@
             <li>Spot the username and password sitting in plain text</li>
           </ol>
           <span class="lac-target-file"><span class="lac-target-label">Target file:</span> <span class="lac-target-name">wireshark-101-class-capture.pcapng</span></span>
+          <div class="lac-submit">
+            <form class="lac-answer-form">
+              <input type="text" class="lac-answer-input" placeholder="Password found in the session" aria-label="Your answer" autocomplete="off" maxlength="200">
+              <button type="submit" class="btn btn-sm">Submit</button>
+            </form>
+            <p class="lac-answer-feedback" hidden></p>
+          </div>
         </div>
       </section>
 

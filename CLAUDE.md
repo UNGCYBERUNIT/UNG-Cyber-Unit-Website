@@ -132,6 +132,19 @@ passing to `Response()`, or it silently stringifies to `"37,80,68,70,..."` inste
 real bytes (caught in code review — Content-Length was ~3.5x the real file size). Keep the
 source file itself out of the repo entirely (gitignored), since it's now living in D1.
 
+**Same rule applies to short "answer" strings, not just whole files** (see
+`/log-analysis-challenge` and `/network-traffic-challenge`'s auto-graded submission forms,
+`POST /api/challenges/:id/submit` in worker.js): a correct-answer IP, count, or password is
+low-entropy enough that even a SHA-256 hash of it, sitting in the public repo, is crackable
+offline in seconds with a wordlist/mask attack — hashing doesn't save you here the way it
+does for real passwords. Store the accepted normalized answer(s) as **plaintext** rows in D1
+(`challenge_answers` — `challenge_id, part_id, answer_norm`, multiple rows per part for
+alternate phrasings) instead, compared server-side via `normalizeAnswer()`; never put the
+correct value in worker.js or any client-visible response. Completion state lives in
+`challenge_completions` (`user_id, challenge_id, part_id`), and wrong submissions are rate
+limited per-user (`challenge_submit_rate_limit`, 15/10min) the same way `room_lookup_failures`
+throttles room-code guessing.
+
 ## Verify before committing
 Run `npx wrangler dev` and actually exercise the change (repo pattern: drive it in
 headless Chrome via puppeteer-core). For DB-touching work, seed and clean rows with

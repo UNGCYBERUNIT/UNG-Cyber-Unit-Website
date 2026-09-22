@@ -2213,6 +2213,91 @@ function initChallengeAnswerKeyToggle() {
   section.hidden = !isInstructor();
 }
 
+// Auto-graded answer submission + persisted completion state for challenge
+// pages. Each .lac-challenge card is a "part" (data-part-id); correct
+// answers are checked and stored entirely server-side (POST
+// /api/challenges/:id/submit) — nothing here knows what the right answer is.
+async function initChallengeSubmissions(challengeId) {
+  const cards = document.querySelectorAll('.lac-challenge[data-part-id]');
+  if (!cards.length) return;
+
+  let completed = new Set();
+  if (currentUser) {
+    try {
+      const res = await fetch(`/api/challenges/${challengeId}/progress`);
+      if (res.ok) completed = new Set((await res.json()).completed || []);
+    } catch { /* show all as not-yet-completed */ }
+  }
+
+  const summary = document.getElementById('challengeProgressSummary');
+  const updateSummary = () => {
+    if (!summary) return;
+    summary.textContent = `[ ${completed.size}/${cards.length} complete ]`;
+    summary.hidden = completed.size === 0;
+  };
+  updateSummary();
+
+  const markCompleted = (submitWrap) => {
+    submitWrap.innerHTML = '<p class="lac-completed-badge">✅ Completed</p>';
+  };
+
+  cards.forEach((card) => {
+    const partId = card.dataset.partId;
+    const submitWrap = card.querySelector('.lac-submit');
+    if (!submitWrap) return;
+
+    if (completed.has(partId)) {
+      markCompleted(submitWrap);
+      return;
+    }
+
+    const form = submitWrap.querySelector('.lac-answer-form');
+    const input = submitWrap.querySelector('.lac-answer-input');
+    const feedback = submitWrap.querySelector('.lac-answer-feedback');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!currentUser) { openAuthModal('login'); return; }
+
+      const answer = input.value.trim();
+      if (!answer) return;
+
+      const btn = form.querySelector('button');
+      btn.disabled = true;
+      feedback.hidden = true;
+
+      try {
+        const res = await fetch(`/api/challenges/${challengeId}/submit`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ partId, answer }),
+        });
+        const data = await res.json().catch(() => ({}));
+
+        if (res.status === 429) {
+          feedback.textContent = data.error || 'Too many attempts — please wait a few minutes.';
+          feedback.className = 'lac-answer-feedback lac-answer-feedback--error';
+          feedback.hidden = false;
+        } else if (res.ok && data.correct) {
+          completed.add(partId);
+          updateSummary();
+          markCompleted(submitWrap);
+        } else {
+          feedback.textContent = 'Not quite — try again.';
+          feedback.className = 'lac-answer-feedback lac-answer-feedback--error';
+          feedback.hidden = false;
+        }
+      } catch {
+        feedback.textContent = 'Something went wrong — try again.';
+        feedback.className = 'lac-answer-feedback lac-answer-feedback--error';
+        feedback.hidden = false;
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  });
+}
+
 // ─── Student Hub ────────────────────────────────────────────────────────────
 
 async function initStudentHubPage() {
@@ -3154,7 +3239,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     initContactPage();
   } else if (window.location.pathname === '/student-hub') {
     initStudentHubPage();
-  } else if (['/log-analysis-challenge', '/network-traffic-challenge'].includes(window.location.pathname)) {
+  } else if (window.location.pathname === '/log-analysis-challenge') {
     initChallengeAnswerKeyToggle();
+    initChallengeSubmissions('log-analysis-regex');
+  } else if (window.location.pathname === '/network-traffic-challenge') {
+    initChallengeAnswerKeyToggle();
+    initChallengeSubmissions('wireshark-nta');
   }
 });
