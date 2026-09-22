@@ -3742,6 +3742,16 @@ export default {
             SELECT id FROM users WHERE role = 'guest' AND created_at < ?
           )
         `).bind(guestCutoff),
+        env.DB.prepare(`
+          DELETE FROM challenge_completions WHERE user_id IN (
+            SELECT id FROM users WHERE role = 'guest' AND created_at < ?
+          )
+        `).bind(guestCutoff),
+        env.DB.prepare(`
+          DELETE FROM challenge_submit_rate_limit WHERE user_id IN (
+            SELECT id FROM users WHERE role = 'guest' AND created_at < ?
+          )
+        `).bind(guestCutoff),
         env.DB.prepare(`DELETE FROM users WHERE role = 'guest' AND created_at < ?`).bind(guestCutoff),
       ])
     );

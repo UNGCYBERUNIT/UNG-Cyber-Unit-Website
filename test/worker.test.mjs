@@ -1624,7 +1624,9 @@ describe('scheduled (cron): abandoned guest cleanup', () => {
     assert.match(batchCall.sqls[0], /DELETE FROM quiz_room_answers/);
     assert.match(batchCall.sqls[1], /DELETE FROM quiz_room_attempts/);
     assert.match(batchCall.sqls[2], /DELETE FROM quiz_results/);
-    assert.match(batchCall.sqls[3], /DELETE FROM users WHERE role = 'guest'/);
+    assert.match(batchCall.sqls[3], /DELETE FROM challenge_completions/);
+    assert.match(batchCall.sqls[4], /DELETE FROM challenge_submit_rate_limit/);
+    assert.match(batchCall.sqls[5], /DELETE FROM users WHERE role = 'guest'/);
     batchCall.sqls.forEach(sql => assert.match(sql, /role = 'guest'/));
   });
 
@@ -2084,6 +2086,9 @@ describe('GET /api/challenges/:id/progress', () => {
 describe('POST /api/challenges/:id/submit', () => {
   // correctNormAnswer: the exact normalized string that counts as correct,
   // so tests exercise the real server-side comparison instead of stubbing it.
+  // ALWAYS a fake placeholder ('fake-test-answer-xyz') here — this file is in
+  // the public repo, so a real challenge_answers value must never appear in
+  // it (see CLAUDE.md's "private answer strings" note).
   function mockSubmitDB(correctNormAnswer, { rateLimited = false } = {}) {
     const calls = [];
     return {
@@ -2111,7 +2116,7 @@ describe('POST /api/challenges/:id/submit', () => {
       new Request('https://example.com/api/challenges/log-analysis-regex/submit', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ partId: 'challenge-2', answer: 'x' }),
       }),
-      { JWT_SECRET: SECRET, DB: mockSubmitDB('203.0.113.44') },
+      { JWT_SECRET: SECRET, DB: mockSubmitDB('fake-test-answer-xyz') },
     );
     assert.equal(res.status, 401);
   });
@@ -2144,7 +2149,7 @@ describe('POST /api/challenges/:id/submit', () => {
       new Request('https://example.com/api/challenges/log-analysis-regex/submit', {
         method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ partId: 'challenge-2', answer: '   ' }),
       }),
-      { JWT_SECRET: SECRET, DB: mockSubmitDB('203.0.113.44') },
+      { JWT_SECRET: SECRET, DB: mockSubmitDB('fake-test-answer-xyz') },
     );
     assert.equal(res.status, 400);
   });
@@ -2155,20 +2160,20 @@ describe('POST /api/challenges/:id/submit', () => {
       new Request('https://example.com/api/challenges/log-analysis-regex/submit', {
         method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ partId: 'challenge-2', answer: '1.2.3.4' }),
       }),
-      { JWT_SECRET: SECRET, DB: mockSubmitDB('203.0.113.44') },
+      { JWT_SECRET: SECRET, DB: mockSubmitDB('fake-test-answer-xyz') },
     );
     assert.equal(res.status, 200);
     const data = await res.json();
     assert.equal(data.correct, false);
-    assert.equal(JSON.stringify(data).includes('203.0.113.44'), false);
+    assert.equal(JSON.stringify(data).includes('fake-test-answer-xyz'), false);
   });
 
   test('should accept a correct answer case/whitespace-insensitively and record completion', async () => {
     const cookie = await sessionCookieFor({ sub: 1, username: 'alice', role: 'member' });
-    const db = mockSubmitDB('203.0.113.44');
+    const db = mockSubmitDB('fake-test-answer-xyz');
     const res = await worker.fetch(
       new Request('https://example.com/api/challenges/log-analysis-regex/submit', {
-        method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ partId: 'challenge-2', answer: '  203.0.113.44  ' }),
+        method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ partId: 'challenge-2', answer: '  fake-test-answer-xyz  ' }),
       }),
       { JWT_SECRET: SECRET, DB: db },
     );
@@ -2186,7 +2191,7 @@ describe('POST /api/challenges/:id/submit', () => {
       new Request('https://example.com/api/challenges/log-analysis-regex/submit', {
         method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ partId: 'challenge-2', answer: 'guess' }),
       }),
-      { JWT_SECRET: SECRET, DB: mockSubmitDB('203.0.113.44', { rateLimited: true }) },
+      { JWT_SECRET: SECRET, DB: mockSubmitDB('fake-test-answer-xyz', { rateLimited: true }) },
     );
     assert.equal(res.status, 429);
   });
