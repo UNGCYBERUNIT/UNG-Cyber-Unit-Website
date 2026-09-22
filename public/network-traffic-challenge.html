@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Network Traffic Analysis & Wireshark Challenge — UNG Cyber Unit</title>
+  <meta name="description" content="Download the UNG Cyber Unit's Network Traffic Analysis workshop files — a hands-on Wireshark live demo capturing cleartext Telnet credentials, plus the full slide deck.">
+  <link rel="canonical" href="https://ungcyberunit.org/network-traffic-challenge">
+
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="UNG Cyber Unit">
+  <meta property="og:title" content="Network Traffic Analysis & Wireshark Challenge — UNG Cyber Unit">
+  <meta property="og:description" content="A hands-on Wireshark live demo — capture file, slide deck, and step-by-step instructions for spotting cleartext credentials on the wire.">
+  <meta property="og:url" content="https://ungcyberunit.org/network-traffic-challenge">
+  <meta property="og:image" content="https://ungcyberunit.org/images/CyberUnitLogo_Transparent.png">
+  <meta property="og:image:alt" content="UNG Cyber Unit logo">
+  <meta name="twitter:card" content="summary">
+
+  <link rel="icon" href="/favicon.ico" type="image/x-icon">
+  <link rel="stylesheet" href="/css/style.css">
+  <style>
+    .lac-downloads {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1rem;
+      margin: 1.5rem 0 2.5rem;
+    }
+    .lac-download-card {
+      text-decoration: none;
+      color: inherit;
+      padding: 1.25rem;
+      text-align: center;
+    }
+    .lac-download-card:hover {
+      transform: translateY(-2px);
+      border-color: rgba(0,255,136,0.3);
+      box-shadow: 0 6px 20px rgba(0,255,136,0.07);
+      color: inherit;
+    }
+    .lac-download-icon { font-size: 1.6rem; display: block; margin-bottom: 0.5rem; }
+    .lac-download-name { font-family: 'Share Tech Mono', monospace; color: var(--accent); display: block; margin-bottom: 0.3rem; }
+    .lac-download-desc { font-size: 0.8rem; color: var(--text-muted); }
+
+    .lac-toolbox {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 0.75rem;
+      margin: 1rem 0 2.5rem;
+    }
+    .lac-tool {
+      padding: 0.9rem 1rem;
+    }
+    .lac-tool-name { font-family: 'Share Tech Mono', monospace; color: var(--accent); font-size: 0.9rem; display: block; margin-bottom: 0.25rem; }
+    .lac-tool-desc { font-size: 0.8rem; color: var(--text-muted); }
+
+    .lac-challenge {
+      margin-bottom: 1rem;
+    }
+    .lac-challenge-head {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+      margin-bottom: 0.5rem;
+    }
+    .lac-difficulty {
+      font-family: 'Share Tech Mono', monospace;
+      font-size: 0.7rem;
+      letter-spacing: 0.04em;
+      padding: 0.2rem 0.55rem;
+      border-radius: 3px;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      text-transform: uppercase;
+    }
+    .lac-difficulty--easy { border-color: rgba(0,255,136,0.4); color: var(--accent); }
+    .lac-challenge-title { margin: 0; font-size: 1.05rem; }
+    .lac-challenge-desc { color: var(--text-muted); margin: 0.4rem 0 0.6rem; font-size: 0.9rem; }
+    .lac-target-file {
+      display: inline-flex;
+      align-items: baseline;
+      gap: 0.4rem;
+      font-size: 0.8rem;
+    }
+    .lac-target-label { color: var(--text-muted); }
+    .lac-target-name {
+      font-family: 'Share Tech Mono', monospace;
+      background: #1a1a1a;
+      border-left: 3px solid var(--accent);
+      padding: 0.15rem 0.5rem;
+      border-radius: 0 3px 3px 0;
+      color: var(--accent);
+    }
+    .lac-steps {
+      margin: 0.75rem 0 1rem;
+      padding-left: 1.4rem;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+    }
+    .lac-steps li { margin-bottom: 0.4rem; }
+    .lac-steps code {
+      font-family: 'Share Tech Mono', monospace;
+      background: #1a1a1a;
+      color: var(--accent);
+      padding: 0.05rem 0.35rem;
+      border-radius: 3px;
+    }
+    .lac-ethics {
+      border-left: 3px solid var(--danger);
+      padding: 0.9rem 1.1rem;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+    .lac-ethics strong { color: var(--text); }
+    .lac-next {
+      margin-top: 2.5rem;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ─── Navbar ──────────────────────────────────────────── -->
+  <nav class="navbar" role="navigation" aria-label="Main navigation">
+    <div class="container">
+      <a href="/" class="navbar-logo"><img src="/images/CyberUnitLogo_Transparent.png" alt="CyberUnit @ UNG" class="navbar-logo-img"><span class="navbar-logo-text">[ CyberUnit @ UNG ]</span></a>
+      <button class="hamburger" id="hamburger" aria-label="Toggle navigation" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
+      <ul class="navbar-links" id="navLinks">
+        <li><a href="/">Home</a></li>
+        <li><a href="/about">About</a></li>
+        <li><a href="https://discord.gg/BjU632E7sV" target="_blank" rel="noopener noreferrer" class="btn btn-sm navbar-discord-btn">Discord</a></li>
+        <li id="authNavItem"></li>
+      </ul>
+    </div>
+  </nav>
+
+  <main class="page-body">
+    <div class="container" style="max-width: 900px; padding: 2rem 1rem;">
+
+      <header style="margin-bottom: 1.5rem;">
+        <h1>// Network Traffic Analysis &amp; Wireshark</h1>
+        <p style="color: var(--text-muted); font-family: 'Share Tech Mono', monospace; font-size: 0.85rem; margin: 0.4rem 0 0;">
+          Packets don't lie. Network Traffic Analysis (NTA) is the process of capturing,
+          inspecting, and interpreting the data that moves across a network to understand
+          behavior, diagnose problems, and detect malicious activity — a hands-on Wireshark
+          live demo from the UNG Cyber Unit workshop.
+        </p>
+      </header>
+
+      <section class="instructor-section">
+        <h2 class="instructor-section-heading">// Download</h2>
+        <div class="lac-downloads">
+          <a class="card lac-download-card" href="/challenges/wireshark-nta/wireshark-101-class-capture.pcapng" download>
+            <span class="lac-download-icon" aria-hidden="true">📡</span>
+            <span class="lac-download-name">Class Capture (.pcapng)</span>
+            <span class="lac-download-desc">The packet capture used in the demo below</span>
+          </a>
+          <a class="card lac-download-card" href="/challenges/wireshark-nta/cyber-unit-wireshark-nta.pptx" download>
+            <span class="lac-download-icon" aria-hidden="true">🖥️</span>
+            <span class="lac-download-name">Workshop Slides (.pptx)</span>
+            <span class="lac-download-desc">Full walkthrough this challenge is drawn from</span>
+          </a>
+        </div>
+      </section>
+
+      <section class="instructor-section">
+        <h2 class="instructor-section-heading">// Meet Wireshark</h2>
+        <p style="color: var(--text-muted); font-size: 0.9rem; margin: 0.5rem 0 0;">
+          A free, open-source packet analyzer that captures traffic on a network interface
+          and displays it in human-readable detail — live capture, opens .pcap/.pcapng files
+          from other tools, and deep protocol dissection (HTTP, DNS, TCP, TLS, and more).
+        </p>
+        <div class="lac-toolbox">
+          <div class="card lac-tool">
+            <span class="lac-tool-name">Packet List</span>
+            <span class="lac-tool-desc">Top pane — one row per packet: time, source, destination, protocol, summary</span>
+          </div>
+          <div class="card lac-tool">
+            <span class="lac-tool-name">Packet Details</span>
+            <span class="lac-tool-desc">Middle pane — an expandable tree of every protocol layer in the selected packet</span>
+          </div>
+          <div class="card lac-tool">
+            <span class="lac-tool-name">Packet Bytes</span>
+            <span class="lac-tool-desc">Bottom pane — the raw hex and ASCII bytes of the selected packet</span>
+          </div>
+          <div class="card lac-tool">
+            <span class="lac-tool-name">http</span>
+            <span class="lac-tool-desc">Display filter — show only HTTP traffic</span>
+          </div>
+          <div class="card lac-tool">
+            <span class="lac-tool-name">tcp.port == 23</span>
+            <span class="lac-tool-desc">Display filter — traffic on a specific port (here, Telnet)</span>
+          </div>
+          <div class="card lac-tool">
+            <span class="lac-tool-name">ip.addr == x.x.x.x</span>
+            <span class="lac-tool-desc">Display filter — traffic to/from a specific IP address</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="instructor-section">
+        <h2 class="instructor-section-heading">// The Challenge</h2>
+        <p style="color: var(--text-muted); font-size: 0.9rem; margin: 0.5rem 0 1rem;">
+          Telnet (TCP port 23) sends everything — including usernames and passwords — as
+          plain, unencrypted text over the network. It's still found on legacy devices and
+          older lab equipment, and it's a textbook example of why NTA matters for a defender.
+        </p>
+
+        <div class="card lac-challenge">
+          <div class="lac-challenge-head">
+            <span class="lac-difficulty lac-difficulty--easy">Live Demo</span>
+          </div>
+          <h3 class="lac-challenge-title">Viewing Cleartext Credentials in Wireshark</h3>
+          <p class="lac-challenge-desc">
+            Reconstruct a Telnet session from the capture and read the login straight off the wire.
+          </p>
+          <ol class="lac-steps">
+            <li>Open the class capture file (<code>wireshark-101-class-capture.pcapng</code>)</li>
+            <li>Filter on <code>tcp.port == 23</code> to isolate the Telnet session</li>
+            <li>Right-click any packet in that conversation, then <strong>Follow &rarr; TCP Stream</strong></li>
+            <li>Read the reconstructed session top to bottom</li>
+            <li>Spot the username and password sitting in plain text</li>
+          </ol>
+          <span class="lac-target-file"><span class="lac-target-label">Target file:</span> <span class="lac-target-name">wireshark-101-class-capture.pcapng</span></span>
+        </div>
+      </section>
+
+      <!-- Instructor-only; revealed by main.js after /api/auth/me confirms the
+           instructor role. The answer key itself is never a static asset (see
+           GET /api/challenges/:id/answer-key in worker.js) so it can't leak
+           via the public GitHub repo. -->
+      <section class="instructor-section" id="answerKeySection" hidden>
+        <h2 class="instructor-section-heading">// Instructor Answer Key</h2>
+        <a class="card lac-download-card" style="max-width:260px;" href="/api/challenges/wireshark-nta/answer-key">
+          <span class="lac-download-icon" aria-hidden="true">🔑</span>
+          <span class="lac-download-name">Answer Key (.pdf)</span>
+          <span class="lac-download-desc">Instructor-only — not linked or visible to students</span>
+        </a>
+      </section>
+
+      <section class="instructor-section">
+        <h2 class="instructor-section-heading">// Capture Responsibly</h2>
+        <p class="card lac-ethics">
+          <strong>Only capture traffic on networks you own, or where you have explicit written
+          authorization to test.</strong> Unauthorized packet capture can violate the Computer
+          Fraud and Abuse Act (CFAA) and similar state laws. Club labs, personal home networks,
+          and NCL/CTF ranges are fair game — production or public networks are not. When in
+          doubt, ask leadership before you sniff.
+        </p>
+      </section>
+
+      <section class="instructor-section lac-next">
+        <h2 class="instructor-section-heading">// References &amp; Resources</h2>
+        <p style="color: var(--text-muted); font-size: 0.9rem; margin: 0.5rem 0 0;">
+          <a href="https://www.wireshark.org" target="_blank" rel="noopener noreferrer">wireshark.org ↗</a>
+          &nbsp;·&nbsp;
+          <a href="https://wiki.wireshark.org/SampleCaptures" target="_blank" rel="noopener noreferrer">Sample Captures ↗</a>
+          &nbsp;·&nbsp;
+          <a href="https://wiki.wireshark.org/DisplayFilters" target="_blank" rel="noopener noreferrer">Display Filters ↗</a>
+        </p>
+      </section>
+
+    </div>
+  </main>
+
+  <script type="module" src="/js/main.js"></script>
+</body>
+</html>

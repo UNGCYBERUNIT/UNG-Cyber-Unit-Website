@@ -1988,6 +1988,14 @@ describe('GET /log-analysis-challenge (workshop challenge page)', () => {
   });
 });
 
+describe('GET /network-traffic-challenge (workshop challenge page)', () => {
+  test('should serve the page with the right content type', async () => {
+    const res = await worker.fetch(new Request('https://example.com/network-traffic-challenge'), { ASSETS: mockAssets() });
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get('Content-Type'), /text\/html/);
+  });
+});
+
 describe('GET /api/challenges/:id/answer-key (instructor-only, D1-backed)', () => {
   // Never a static asset — this data must not be servable to a signed-out
   // visitor or leak via the (public) GitHub repo the rest of the site lives in.

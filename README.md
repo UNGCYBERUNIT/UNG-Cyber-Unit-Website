@@ -100,6 +100,8 @@ cybersec-basics/
 │   ├── leaderboard.html, announcements.html, contact.html  # Other member-facing pages
 │   ├── log-analysis-challenge.html  # Downloadable workshop: challenge files, slides, regex cheat-sheet
 │   ├── challenges/log-analysis-regex/  # Static downloads for the page above (zip/pdf/pptx) — `Disallow`ed in robots.txt
+│   ├── network-traffic-challenge.html  # Downloadable workshop: Wireshark NTA live demo, capture file, slides
+│   ├── challenges/wireshark-nta/  # Static downloads for the page above (pcapng/pptx) — `Disallow`ed in robots.txt
 │   ├── css/               # Global stylesheet
 │   ├── images/            # Topic images
 │   └── js/                # Client-side scripts
@@ -137,6 +139,7 @@ cybersec-basics/
 | `/about` | Unit overview and org chart |
 | `/sop` | Cyber Unit SOP (PDF) |
 | `/log-analysis-challenge` | Log Analysis & Regex workshop — five downloadable log-hunting challenges, the slide deck, and a regex quick-reference PDF (assets under `public/challenges/log-analysis-regex/`, `Disallow`ed in robots.txt). Instructors/admins also see a link to the answer key, served from `/api/challenges/:id/answer-key` above. |
+| `/network-traffic-challenge` | Network Traffic Analysis & Wireshark workshop — a live-demo Telnet-cleartext capture challenge, the class `.pcapng`, and the slide deck (assets under `public/challenges/wireshark-nta/`, `Disallow`ed in robots.txt). Instructors/admins also see a link to the answer key. |
 | `/instructor` | Instructor panel — create/manage Quiz Rooms, grade free responses |
 | `/student-hub` | Student-only quiz rooms — gated to the admin-assigned `student` role and above |
 | `/quiz` | **Join Room** — browse public Quiz Rooms, or enter a private room code |

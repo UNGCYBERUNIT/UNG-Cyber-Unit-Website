@@ -2202,9 +2202,12 @@ function initContactPage() {
   });
 }
 
-// ─── Log Analysis & Regex Challenge ────────────────────────────────────────
+// ─── Downloadable Challenge Pages (log-analysis-challenge, network-traffic-challenge, ...) ──
+// Every such page shares the same #answerKeySection markup — reveal it only
+// for instructor/admin. The real gate is server-side (requireRole on
+// GET /api/challenges/:id/answer-key); this just controls link visibility.
 
-function initLogAnalysisChallengePage() {
+function initChallengeAnswerKeyToggle() {
   const section = document.getElementById('answerKeySection');
   if (!section) return;
   section.hidden = !isInstructor();
@@ -3151,7 +3154,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     initContactPage();
   } else if (window.location.pathname === '/student-hub') {
     initStudentHubPage();
-  } else if (window.location.pathname === '/log-analysis-challenge') {
-    initLogAnalysisChallengePage();
+  } else if (['/log-analysis-challenge', '/network-traffic-challenge'].includes(window.location.pathname)) {
+    initChallengeAnswerKeyToggle();
   }
 });
