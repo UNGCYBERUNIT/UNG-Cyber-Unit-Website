@@ -712,43 +712,41 @@ function updateAuthNav() {
   const navItem = document.getElementById('authNavItem');
   if (!navItem) return;
 
-  // Single ☰ menu, sectioned by content type so it stays scannable as it
-  // grows — each group gets a small uppercase label; a divider separates
-  // groups from each other and from the trailing role-gated staff group
-  // (only rendered when it has at least one item) and Contact Us. Server
-  // routes still enforce roles; this gating only controls visibility. Guest
-  // login lives in the Sign In modal instead.
+  // Single ☰ menu, sectioned by content type and laid out as side-by-side
+  // columns (one per section) so it grows wider rather than taller as more
+  // links accumulate. Each column gets a small uppercase label; the
+  // role-gated Staff column only renders when the viewer has at least one
+  // staff link to show. Server routes still enforce roles; this gating only
+  // controls visibility. Guest login lives in the Sign In modal instead.
   const showUnreadDot = currentUser?.hasUnreadAnnouncements;
 
-  const section = (label, items) => {
+  const col = (label, items) => {
     const rendered = items.filter(Boolean).join('');
     if (!rendered) return '';
-    return `<div class="nav-dropdown-label">${label}</div>${rendered}`;
+    return `<div class="nav-dropdown-col"><div class="nav-dropdown-label">${label}</div>${rendered}</div>`;
   };
 
-  const groups = [
-    section('Learn', [
+  const menuItems = [
+    col('Learn', [
       `<a href="/start" class="nav-dropdown-item">Beginner Pathway</a>`,
       `<a href="/resources" class="nav-dropdown-item">Resources</a>`,
     ]),
-    section('Community', [
+    col('Community', [
       `<a href="/announcements" class="nav-dropdown-item">Announcements${showUnreadDot ? ' <span class="nav-badge-dot" aria-label="Unread announcements"></span>' : ''}</a>`,
       `<a href="/events" class="nav-dropdown-item">Events</a>`,
       `<a href="/members" class="nav-dropdown-item">Member Directory</a>`,
     ]),
-    section('Quizzes', [
+    col('Quizzes', [
       `<a href="/quiz" class="nav-dropdown-item">Join Room</a>`,
       `<a href="/leaderboard" class="nav-dropdown-item">Leaderboard</a>`,
     ]),
-    section('Staff', [
+    col('Staff', [
       isStudentPlus() ? `<a href="/student-hub" class="nav-dropdown-item">Student Hub</a>` : '',
       isInstructor() ? `<a href="/instructor" class="nav-dropdown-item">Instructor Panel</a>` : '',
       currentUser?.role === 'admin' ? `<a href="/admin" class="nav-dropdown-item nav-dropdown-item--danger">Admin Panel</a>` : '',
     ]),
-    `<a href="/contact" class="nav-dropdown-item">Contact Us</a>`,
-  ].filter(Boolean);
-
-  const menuItems = groups.join('<div class="nav-dropdown-divider" role="separator"></div>');
+    col('More', [`<a href="/contact" class="nav-dropdown-item">Contact Us</a>`]),
+  ].filter(Boolean).join('');
 
   const menuBtn = `<div class="nav-dropdown" id="navMenuDropdown">
       <button class="nav-dropdown-toggle" id="navMenuBtn" aria-label="Menu${showUnreadDot ? ' (unread announcements)' : ''}" aria-expanded="false">☰${showUnreadDot ? '<span class="nav-badge-dot" aria-hidden="true"></span>' : ''}</button>
@@ -806,6 +804,18 @@ function wireNavDropdown(btnId, menuId) {
     const nowOpen = menu.hidden;
     menu.hidden = !nowOpen;
     btn.setAttribute('aria-expanded', nowOpen);
+
+    // The menu is right-anchored to the toggle button, which doesn't sit at
+    // the true right edge of the viewport (the avatar/username and sign
+    // out/in button trail it). On the wide-screen side-by-side column
+    // layout, a right-anchored multi-column menu can otherwise render past
+    // the left edge of the viewport on narrower desktop widths — cap its
+    // width to whatever space is actually available there. Only matters
+    // above the mobile breakpoint, where the columns layout applies.
+    if (nowOpen && window.matchMedia('(min-width: 769px)').matches) {
+      const available = Math.round(btn.getBoundingClientRect().right - 16);
+      menu.style.maxWidth = `${available}px`;
+    }
   });
   document.addEventListener('click', e => {
     if (!menu.hidden && !menu.contains(e.target)) {

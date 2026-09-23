@@ -1828,9 +1828,49 @@ footer {
   overflow: hidden;
   box-shadow: 0 4px 16px rgba(0,0,0,0.4);
   padding: 0.4rem 0;
+  /* Mobile-first: one column, sections stacked vertically (there's no room
+     to go wide on a phone-width menu). Widened into side-by-side columns
+     at the min-width breakpoint below. */
+  display: flex;
+  flex-direction: column;
 }
-/* Small uppercase heading above each content-type group (Learn, Community,
-   Quizzes, Staff) — first one in the menu gets no extra top gap. */
+.nav-dropdown-col + .nav-dropdown-col {
+  border-top: 1px solid var(--border);
+}
+@media (min-width: 769px) {
+  /* Each content-type section becomes its own column, so the menu grows
+     wider rather than taller as sections/links accumulate. Wraps onto a
+     second row (rather than clipping) if wireNavDropdown()'s JS-computed
+     max-width — capped to the space actually available to the menu's left,
+     since it's right-anchored to the toggle button, not the viewport edge —
+     can't fit every column on one line. */
+  .nav-dropdown-menu {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: stretch;
+    padding: 0.4rem 0;
+    min-width: 0;
+    /* Without an explicit width, an absolutely-positioned wrapping flex
+       container's shrink-to-fit sizing resolves toward its narrowest
+       possible layout (one column per row) even when max-width leaves
+       plenty of room for a single row — asking for its full preferred
+       (max-content) width here, clamped by the JS-set max-width above,
+       is what actually gets every column onto one row when there's space. */
+    width: max-content;
+  }
+  .nav-dropdown-col {
+    display: flex;
+    flex-direction: column;
+    min-width: 170px;
+    flex: 1 0 auto;
+  }
+  .nav-dropdown-col + .nav-dropdown-col {
+    border-top: none;
+    border-left: 1px solid var(--border);
+  }
+}
+/* Small uppercase heading above each content-type column (Learn, Community,
+   Quizzes, Staff, More). */
 .nav-dropdown-label {
   padding: 0.5rem 1rem 0.3rem;
   font-family: 'Share Tech Mono', monospace;
@@ -1838,11 +1878,6 @@ footer {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--text-muted);
-}
-.nav-dropdown-divider {
-  height: 1px;
-  margin: 0.4rem 0;
-  background: var(--border);
 }
 .nav-dropdown-item {
   display: flex;
