@@ -1882,7 +1882,7 @@ footer {
   font-size: 0.68rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--text-muted);
+  color: var(--accent);
 }
 .nav-dropdown-item {
   display: flex;
