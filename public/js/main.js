@@ -1275,6 +1275,71 @@ async function initAdminPanel() {
 
   await loadUsers();
   await loadFeedback();
+  await loadAuditLog();
+}
+
+// Append-only audit trail — read-only UI, cursor-paginated ("Load more").
+// No edit/delete affordance here, ever: the log has no PATCH/DELETE route
+// server-side (see logAudit() in worker.js), and this UI must not imply one.
+async function loadAuditLog() {
+  const wrap = document.getElementById('auditLogTableWrap');
+  const moreBtn = document.getElementById('auditLogLoadMoreBtn');
+  if (!wrap) return;
+
+  let rows = [];
+  const ACTION_LABELS = {
+    'user.role_change': 'Role change',
+    'user.delete': 'User deleted',
+    'announcement.create': 'Announcement created',
+    'announcement.edit': 'Announcement edited',
+    'announcement.delete': 'Announcement deleted',
+    'room.delete': 'Room deleted',
+  };
+
+  function render() {
+    if (!rows.length) {
+      wrap.innerHTML = `<p style="color:var(--text-muted);font-family:'Share Tech Mono',monospace;">No audit entries yet.</p>`;
+      return;
+    }
+    wrap.innerHTML = `
+      <table class="admin-table" aria-label="Audit log">
+        <thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Target</th><th>Detail</th></tr></thead>
+        <tbody>
+          ${rows.map(r => `<tr>
+            <td style="color:var(--text-muted);font-size:0.85rem;white-space:nowrap;">${new Date(r.created_at).toLocaleString()}</td>
+            <td>${escHtml(r.actor_name)}</td>
+            <td>${escHtml(ACTION_LABELS[r.action] ?? r.action)}</td>
+            <td>${escHtml(r.target)}</td>
+            <td style="font-size:0.85rem;color:var(--text-muted);">${(r.detail ?? []).map(d =>
+              `${escHtml(d.field)}: ${escHtml(String(d.before ?? '—'))} → ${escHtml(String(d.after ?? '—'))}`
+            ).join('; ')}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`;
+  }
+
+  async function loadPage(before) {
+    const params = new URLSearchParams({ limit: '50' });
+    if (before) params.set('before', String(before));
+    const res = await fetch(`/api/admin/audit-log?${params}`);
+    if (!res.ok) throw new Error();
+    const { results } = await res.json();
+    rows = rows.concat(results ?? []);
+    render();
+    if (moreBtn) moreBtn.hidden = (results ?? []).length < 50;
+  }
+
+  try {
+    await loadPage();
+  } catch {
+    wrap.innerHTML = `<p style="color:var(--danger);font-family:'Share Tech Mono',monospace;">Failed to load audit log.</p>`;
+    return;
+  }
+
+  moreBtn?.addEventListener('click', () => {
+    const lastId = rows[rows.length - 1]?.id;
+    if (lastId) loadPage(lastId);
+  });
 }
 
 async function loadFeedback() {

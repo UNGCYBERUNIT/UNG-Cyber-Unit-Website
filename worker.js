@@ -1501,6 +1501,19 @@ async function requireRole(request, env, minRole) {
   return session;
 }
 
+// ─── Admin Audit Log ────────────────────────────────────────────────────────
+// Append-only by design — see the schema.sql comment above the audit_log
+// table. This is the ONLY function that ever writes to it; no PATCH/DELETE
+// route for this table should ever be added. `detail` is an optional array
+// of { field, before, after } objects, stored as JSON. Returns a bound (not
+// yet executed) statement, so callers can push it into an existing
+// env.DB.batch([...]) array to commit atomically with the mutation it logs.
+function logAudit(env, { actorId, actorName, action, target, detail }) {
+  return env.DB.prepare(
+    'INSERT INTO audit_log (actor_id, actor_name, action, target, detail, created_at) VALUES (?, ?, ?, ?, ?, ?)'
+  ).bind(actorId, actorName, action, target, detail ? JSON.stringify(detail) : null, Date.now());
+}
+
 // ─── Discord Bot API Auth ─────────────────────────────────────────────────────
 // Shared-secret gate for the /api/bot/* endpoints the Discord bot calls
 // server-to-server (it has no browser session, so getSession/requireRole
@@ -2757,8 +2770,17 @@ export default {
         try { body = await request.json(); } catch { return jsonResponse({ error: 'Invalid request body' }, 400); }
         const { role } = body ?? {};
         if (!['member', 'student', 'instructor', 'admin'].includes(role)) return jsonResponse({ error: 'Invalid role' }, 400);
-        const info = await env.DB.prepare('UPDATE users SET role = ? WHERE id = ?').bind(role, targetId).run();
-        if (info.meta.changes === 0) return jsonResponse({ error: 'User not found' }, 404);
+
+        const target = await env.DB.prepare('SELECT username, role FROM users WHERE id = ?').bind(targetId).first();
+        if (!target) return jsonResponse({ error: 'User not found' }, 404);
+
+        await env.DB.batch([
+          env.DB.prepare('UPDATE users SET role = ? WHERE id = ?').bind(role, targetId),
+          logAudit(env, {
+            actorId: session.sub, actorName: session.username, action: 'user.role_change',
+            target: target.username, detail: [{ field: 'role', before: target.role, after: role }],
+          }),
+        ]);
         return jsonResponse({ ok: true });
       }
 
@@ -2766,6 +2788,10 @@ export default {
       if (adminUserMatch && request.method === 'DELETE') {
         const targetId = parseInt(adminUserMatch[1], 10);
         if (targetId === session.sub) return jsonResponse({ error: 'Cannot delete your own account' }, 403);
+
+        const target = await env.DB.prepare('SELECT username, role FROM users WHERE id = ?').bind(targetId).first();
+        if (!target) return jsonResponse({ error: 'User not found' }, 404);
+
         // Cascade room attempt answers before deleting attempts
         const { results: userAttempts } = await env.DB.prepare(
           'SELECT id FROM quiz_room_attempts WHERE user_id = ?'
@@ -2776,8 +2802,31 @@ export default {
         stmts.push(env.DB.prepare('DELETE FROM quiz_room_attempts WHERE user_id = ?').bind(targetId));
         stmts.push(env.DB.prepare('DELETE FROM quiz_results WHERE user_id = ?').bind(targetId));
         stmts.push(env.DB.prepare('DELETE FROM users WHERE id = ?').bind(targetId));
+        stmts.push(logAudit(env, {
+          actorId: session.sub, actorName: session.username, action: 'user.delete',
+          target: target.username, detail: [{ field: 'role', before: target.role, after: null }],
+        }));
         await env.DB.batch(stmts);
         return jsonResponse({ ok: true });
+      }
+
+      // GET /api/admin/audit-log?before=<id>&limit=50 — cursor-paginated,
+      // newest first. No PATCH/DELETE route for this table exists, or ever
+      // should — see the append-only comments on schema.sql's audit_log
+      // table and logAudit() above.
+      if (path === '/api/admin/audit-log' && request.method === 'GET') {
+        const limit = Math.min(Math.max(parseInt(url.searchParams.get('limit'), 10) || 50, 1), 100);
+        const before = parseInt(url.searchParams.get('before'), 10);
+        const cursorClause = Number.isInteger(before) ? 'WHERE id < ?' : '';
+        const cursorBind = Number.isInteger(before) ? [before] : [];
+
+        const { results } = await env.DB.prepare(
+          `SELECT id, actor_id, actor_name, action, target, detail, created_at FROM audit_log ${cursorClause} ORDER BY id DESC LIMIT ?`
+        ).bind(...cursorBind, limit).all();
+
+        return jsonResponse({
+          results: (results ?? []).map(r => ({ ...r, detail: r.detail ? JSON.parse(r.detail) : null })),
+        });
       }
     }
 
@@ -2826,9 +2875,14 @@ export default {
         if (text.length > 5000) return jsonResponse({ error: 'Body must be 5000 characters or fewer' }, 400);
 
         const now = Date.now();
-        const info = await env.DB.prepare(
-          'INSERT INTO announcements (title, body, created_by, created_at) VALUES (?, ?, ?, ?)'
-        ).bind(title, text, session.sub, now).run();
+        const [info] = await env.DB.batch([
+          env.DB.prepare(
+            'INSERT INTO announcements (title, body, created_by, created_at) VALUES (?, ?, ?, ?)'
+          ).bind(title, text, session.sub, now),
+          logAudit(env, {
+            actorId: session.sub, actorName: session.username, action: 'announcement.create', target: title,
+          }),
+        ]);
         return jsonResponse({ id: info.meta.last_row_id, title, body: text, created_at: now, username: session.username }, 201);
       }
 
@@ -2847,10 +2901,21 @@ export default {
         if (!text) return jsonResponse({ error: 'Body is required' }, 400);
         if (text.length > 5000) return jsonResponse({ error: 'Body must be 5000 characters or fewer' }, 400);
 
-        const info = await env.DB.prepare(
-          'UPDATE announcements SET title = ?, body = ?, updated_at = ? WHERE id = ?'
-        ).bind(title, text, Date.now(), idMatch[1]).run();
-        if (info.meta.changes === 0) return jsonResponse({ error: 'Announcement not found' }, 404);
+        const existing = await env.DB.prepare('SELECT title, body FROM announcements WHERE id = ?').bind(idMatch[1]).first();
+        if (!existing) return jsonResponse({ error: 'Announcement not found' }, 404);
+
+        await env.DB.batch([
+          env.DB.prepare(
+            'UPDATE announcements SET title = ?, body = ?, updated_at = ? WHERE id = ?'
+          ).bind(title, text, Date.now(), idMatch[1]),
+          logAudit(env, {
+            actorId: session.sub, actorName: session.username, action: 'announcement.edit', target: title,
+            detail: [
+              { field: 'title', before: existing.title, after: title },
+              { field: 'body', before: existing.body, after: text },
+            ],
+          }),
+        ]);
         return jsonResponse({ ok: true });
       }
 
@@ -2858,8 +2923,15 @@ export default {
       if (idMatch && request.method === 'DELETE') {
         if (session.role !== 'admin') return jsonResponse({ error: 'Forbidden' }, 403);
 
-        const info = await env.DB.prepare('DELETE FROM announcements WHERE id = ?').bind(idMatch[1]).run();
-        if (info.meta.changes === 0) return jsonResponse({ error: 'Announcement not found' }, 404);
+        const existing = await env.DB.prepare('SELECT title FROM announcements WHERE id = ?').bind(idMatch[1]).first();
+        if (!existing) return jsonResponse({ error: 'Announcement not found' }, 404);
+
+        await env.DB.batch([
+          env.DB.prepare('DELETE FROM announcements WHERE id = ?').bind(idMatch[1]),
+          logAudit(env, {
+            actorId: session.sub, actorName: session.username, action: 'announcement.delete', target: existing.title,
+          }),
+        ]);
         return jsonResponse({ ok: true });
       }
     }
@@ -3552,7 +3624,7 @@ export default {
           const session = await requireRole(request, env, 'instructor');
           if (session instanceof Response) return session;
 
-          const room = await env.DB.prepare('SELECT id, created_by FROM quiz_rooms WHERE code = ?').bind(code).first();
+          const room = await env.DB.prepare('SELECT id, title, created_by FROM quiz_rooms WHERE code = ?').bind(code).first();
           if (!room) return jsonResponse({ error: 'Room not found' }, 404);
           if (room.created_by !== session.sub && session.role !== 'admin') {
             return jsonResponse({ error: 'Forbidden' }, 403);
@@ -3569,6 +3641,9 @@ export default {
           stmts.push(env.DB.prepare('DELETE FROM quiz_room_attempts WHERE room_id = ?').bind(room.id));
           stmts.push(env.DB.prepare('DELETE FROM quiz_room_questions WHERE room_id = ?').bind(room.id));
           stmts.push(env.DB.prepare('DELETE FROM quiz_rooms WHERE id = ?').bind(room.id));
+          stmts.push(logAudit(env, {
+            actorId: session.sub, actorName: session.username, action: 'room.delete', target: `${room.title} (${code})`,
+          }));
           await env.DB.batch(stmts);
           return jsonResponse({ ok: true });
         }

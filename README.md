@@ -192,6 +192,7 @@ cybersec-basics/
 | `/api/feedback` (GET), `/api/feedback/:id` (DELETE) | Admin only — review/dismiss submissions |
 | `/api/admin/users` (GET) | Admin — list all users |
 | `/api/admin/users/:id` (PATCH/DELETE) | Admin — change a user's role or delete their account (cascades their quiz/room data) |
+| `/api/admin/audit-log?before=&limit=` (GET) | Admin — cursor-paginated, newest-first log of role changes, user deletes, announcement CRUD, and room deletes. Append-only — no PATCH/DELETE route exists for this table |
 | `/api/rooms` (POST/GET) | Instructor — create a room / list your rooms |
 | `/api/rooms/public` | Any logged-in member — browse open public rooms |
 | `/api/rooms/:code/join` | Student — join a room, fetch its questions |

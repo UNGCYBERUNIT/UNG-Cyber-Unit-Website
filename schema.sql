@@ -120,6 +120,23 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE INDEX IF NOT EXISTS idx_events_date ON events (event_date);
 
+-- Append-only. No UPDATE/DELETE route should ever exist for this table —
+-- the only mutation is the INSERT performed as a side effect of the action
+-- being logged. actor_id intentionally has no cascade-on-delete behavior:
+-- the log must survive the actor's account being removed, which is why
+-- actor_name is captured as a denormalized snapshot at insert time.
+CREATE TABLE IF NOT EXISTS audit_log (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  actor_id    INTEGER NOT NULL,
+  actor_name  TEXT    NOT NULL,
+  action      TEXT    NOT NULL,
+  target      TEXT    NOT NULL,
+  detail      TEXT,
+  created_at  INTEGER NOT NULL,
+  FOREIGN KEY (actor_id) REFERENCES users(id)
+);
+CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log (created_at);
+
 CREATE TABLE IF NOT EXISTS feedback (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   message     TEXT    NOT NULL,

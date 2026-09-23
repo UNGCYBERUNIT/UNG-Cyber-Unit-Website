@@ -1976,7 +1976,7 @@ describe('POST /api/announcements', () => {
   });
 
   test('should create the announcement for an admin', async () => {
-    const db = mockDB();
+    const db = mockAuditActionDB({});
     const cookie = await sessionCookieFor({ sub: 1, username: 'admin1', role: 'admin' });
     const res = await worker.fetch(
       new Request('https://example.com/api/announcements', {
@@ -1989,9 +1989,10 @@ describe('POST /api/announcements', () => {
     assert.equal(res.status, 201);
     const data = await res.json();
     assert.equal(data.title, 'New Semester');
-    const insert = db.calls.find(c => c.op === 'run');
-    assert.match(insert.sql, /INSERT INTO announcements/);
-    assert.deepEqual(insert.bindings, ['New Semester', 'Welcome back!', 1, data.created_at]);
+    const batchCall = db.calls.find(c => c.op === 'batch');
+    const insertIdx = batchCall.sqls.findIndex(sql => /INSERT INTO announcements/.test(sql));
+    assert.ok(insertIdx >= 0);
+    assert.deepEqual(batchCall.bindings[insertIdx], ['New Semester', 'Welcome back!', 1, data.created_at]);
   });
 });
 
@@ -2013,7 +2014,9 @@ describe('PATCH /api/announcements/:id', () => {
     // Deliberately a *different* admin than whoever created id 5 — this
     // codebase treats announcements as shared unit-wide content, unlike Quiz
     // Rooms' creator-or-admin ownership pattern.
-    const db = mockDB();
+    const db = mockAuditActionDB({
+      first: [[/SELECT title, body FROM announcements WHERE id = \?/, { title: 'Old Title', body: 'Old body' }]],
+    });
     const cookie = await sessionCookieFor({ sub: 99, username: 'another-admin', role: 'admin' });
     const res = await worker.fetch(
       new Request('https://example.com/api/announcements/5', {
@@ -2024,10 +2027,11 @@ describe('PATCH /api/announcements/:id', () => {
       { JWT_SECRET: SECRET, DB: db },
     );
     assert.equal(res.status, 200);
-    const update = db.calls.find(c => c.op === 'run');
-    assert.match(update.sql, /UPDATE announcements SET title = \?, body = \?, updated_at = \? WHERE id = \?/);
-    assert.equal(update.bindings[0], 'Updated Title');
-    assert.equal(update.bindings[3], '5');
+    const batchCall = db.calls.find(c => c.op === 'batch');
+    const updateIdx = batchCall.sqls.findIndex(sql => /UPDATE announcements SET title = \?, body = \?, updated_at = \? WHERE id = \?/.test(sql));
+    assert.ok(updateIdx >= 0);
+    assert.equal(batchCall.bindings[updateIdx][0], 'Updated Title');
+    assert.equal(batchCall.bindings[updateIdx][3], '5');
   });
 });
 
@@ -2042,15 +2046,18 @@ describe('DELETE /api/announcements/:id', () => {
   });
 
   test('should delete for an admin', async () => {
-    const db = mockDB();
+    const db = mockAuditActionDB({
+      first: [[/SELECT title FROM announcements WHERE id = \?/, { title: 'Old News' }]],
+    });
     const cookie = await sessionCookieFor({ sub: 1, username: 'admin1', role: 'admin' });
     const res = await worker.fetch(
       new Request('https://example.com/api/announcements/5', { method: 'DELETE', headers: { Cookie: cookie } }),
       { JWT_SECRET: SECRET, DB: db },
     );
     assert.equal(res.status, 200);
-    const del = db.calls.find(c => c.op === 'run');
-    assert.match(del.sql, /DELETE FROM announcements WHERE id = \?/);
+    const batchCall = db.calls.find(c => c.op === 'batch');
+    const delIdx = batchCall.sqls.findIndex(sql => /DELETE FROM announcements WHERE id = \?/.test(sql));
+    assert.ok(delIdx >= 0);
   });
 });
 
@@ -2281,6 +2288,220 @@ describe('GET /api/instructor/topic-completion', () => {
     assert.ok(Array.isArray(data.results));
   });
 });
+
+// ─── Admin audit log ─────────────────────────────────────────────────────────
+// A mock D1 for the five audit-instrumented mutations: `first` is resolved
+// from an ordered [regex, result] list (checked in order, first match wins),
+// and `batch` records every statement's SQL/bindings in `calls` so a test can
+// assert the audit_log INSERT that rode along in the same batch.
+function mockAuditActionDB({ first = [] } = {}) {
+  const calls = [];
+  return {
+    calls,
+    prepare(sql) {
+      return {
+        bind: (...bindings) => ({
+          sql, bindings,
+          first: async () => {
+            calls.push({ sql, bindings, op: 'first' });
+            for (const [re, result] of first) if (re.test(sql)) return result;
+            return null;
+          },
+          all: async () => { calls.push({ sql, bindings, op: 'all' }); return { results: [] }; },
+          run: async () => { calls.push({ sql, bindings, op: 'run' }); return { meta: { last_row_id: 1, changes: 1 } }; },
+        }),
+      };
+    },
+    async batch(stmts) {
+      calls.push({ op: 'batch', sqls: stmts.map(s => s.sql), bindings: stmts.map(s => s.bindings) });
+      return stmts.map(() => ({ meta: { last_row_id: 1, changes: 1 } }));
+    },
+  };
+}
+
+describe('Audit log instrumentation', () => {
+  test('PATCH /api/admin/users/:id should log a user.role_change entry in the same batch as the UPDATE', async () => {
+    const db = mockAuditActionDB({
+      first: [[/SELECT username, role FROM users WHERE id = \?/, { username: 'bob', role: 'member' }]],
+    });
+    const cookie = await sessionCookieFor({ sub: 1, username: 'admin1', role: 'admin' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/admin/users/2', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Cookie: cookie },
+        body: JSON.stringify({ role: 'instructor' }),
+      }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 200);
+    const batchCall = db.calls.find(c => c.op === 'batch');
+    assert.ok(batchCall);
+    const auditIdx = batchCall.sqls.findIndex(sql => /INSERT INTO audit_log/.test(sql));
+    assert.ok(auditIdx >= 0);
+    const [actorId, actorName, action, target, detail] = batchCall.bindings[auditIdx];
+    assert.equal(actorId, 1);
+    assert.equal(actorName, 'admin1');
+    assert.equal(action, 'user.role_change');
+    assert.equal(target, 'bob');
+    assert.deepEqual(JSON.parse(detail), [{ field: 'role', before: 'member', after: 'instructor' }]);
+  });
+
+  test('DELETE /api/admin/users/:id should log a user.delete entry in the same batch as the cascade', async () => {
+    const db = mockAuditActionDB({
+      first: [[/SELECT username, role FROM users WHERE id = \?/, { username: 'bob', role: 'member' }]],
+    });
+    const cookie = await sessionCookieFor({ sub: 1, username: 'admin1', role: 'admin' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/admin/users/2', { method: 'DELETE', headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 200);
+    const batchCall = db.calls.find(c => c.op === 'batch');
+    const auditIdx = batchCall.sqls.findIndex(sql => /INSERT INTO audit_log/.test(sql));
+    assert.ok(auditIdx >= 0);
+    assert.equal(batchCall.bindings[auditIdx][2], 'user.delete');
+    assert.equal(batchCall.bindings[auditIdx][3], 'bob');
+  });
+
+  test('POST /api/announcements should log an announcement.create entry', async () => {
+    const db = mockAuditActionDB({});
+    const cookie = await sessionCookieFor({ sub: 1, username: 'admin1', role: 'admin' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/announcements', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Cookie: cookie },
+        body: JSON.stringify({ title: 'New Semester', body: 'Welcome back!' }),
+      }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 201);
+    const batchCall = db.calls.find(c => c.op === 'batch');
+    const auditIdx = batchCall.sqls.findIndex(sql => /INSERT INTO audit_log/.test(sql));
+    assert.ok(auditIdx >= 0);
+    assert.equal(batchCall.bindings[auditIdx][2], 'announcement.create');
+    assert.equal(batchCall.bindings[auditIdx][3], 'New Semester');
+  });
+
+  test('PATCH /api/announcements/:id should log the before/after title and body', async () => {
+    const db = mockAuditActionDB({
+      first: [[/SELECT title, body FROM announcements WHERE id = \?/, { title: 'Old Title', body: 'Old body' }]],
+    });
+    const cookie = await sessionCookieFor({ sub: 1, username: 'admin1', role: 'admin' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/announcements/5', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Cookie: cookie },
+        body: JSON.stringify({ title: 'New Title', body: 'New body' }),
+      }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 200);
+    const batchCall = db.calls.find(c => c.op === 'batch');
+    const auditIdx = batchCall.sqls.findIndex(sql => /INSERT INTO audit_log/.test(sql));
+    const detail = JSON.parse(batchCall.bindings[auditIdx][4]);
+    assert.deepEqual(detail, [
+      { field: 'title', before: 'Old Title', after: 'New Title' },
+      { field: 'body', before: 'Old body', after: 'New body' },
+    ]);
+  });
+
+  test('PATCH /api/announcements/:id should 404 for an unknown id without logging anything', async () => {
+    const db = mockAuditActionDB({}); // no announcement fixture -> first() returns null
+    const cookie = await sessionCookieFor({ sub: 1, username: 'admin1', role: 'admin' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/announcements/999', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Cookie: cookie },
+        body: JSON.stringify({ title: 'X', body: 'Y' }),
+      }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 404);
+    assert.ok(!db.calls.some(c => c.op === 'batch'));
+  });
+
+  test('DELETE /api/announcements/:id should log an announcement.delete entry', async () => {
+    const db = mockAuditActionDB({
+      first: [[/SELECT title FROM announcements WHERE id = \?/, { title: 'Old News' }]],
+    });
+    const cookie = await sessionCookieFor({ sub: 1, username: 'admin1', role: 'admin' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/announcements/5', { method: 'DELETE', headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 200);
+    const batchCall = db.calls.find(c => c.op === 'batch');
+    const auditIdx = batchCall.sqls.findIndex(sql => /INSERT INTO audit_log/.test(sql));
+    assert.equal(batchCall.bindings[auditIdx][2], 'announcement.delete');
+    assert.equal(batchCall.bindings[auditIdx][3], 'Old News');
+  });
+
+  test('DELETE /api/rooms/:code should log a room.delete entry in the same batch as the cascade', async () => {
+    const db = mockAuditActionDB({
+      first: [[/SELECT id, title, created_by FROM quiz_rooms WHERE code = \?/, { id: 7, title: 'Promo Board', created_by: 1 }]],
+    });
+    const cookie = await sessionCookieFor({ sub: 1, username: 'admin1', role: 'instructor' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/rooms/ABCD-2345', { method: 'DELETE', headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 200);
+    const batchCall = db.calls.find(c => c.op === 'batch');
+    const auditIdx = batchCall.sqls.findIndex(sql => /INSERT INTO audit_log/.test(sql));
+    assert.ok(auditIdx >= 0);
+    assert.equal(batchCall.bindings[auditIdx][2], 'room.delete');
+    assert.match(batchCall.bindings[auditIdx][3], /Promo Board \(ABCD-2345\)/);
+  });
+});
+
+describe('GET /api/admin/audit-log', () => {
+  test('should reject a non-admin', async () => {
+    const cookie = await sessionCookieFor({ sub: 1, username: 'inst', role: 'instructor' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/admin/audit-log', { headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: mockDB() },
+    );
+    assert.equal(res.status, 403);
+  });
+
+  test('should return newest-first results with detail parsed from JSON', async () => {
+    const db = mockDB();
+    const rows = [
+      { id: 2, actor_id: 1, actor_name: 'admin1', action: 'user.role_change', target: 'bob', detail: JSON.stringify([{ field: 'role', before: 'member', after: 'admin' }]), created_at: 2000 },
+      { id: 1, actor_id: 1, actor_name: 'admin1', action: 'announcement.create', target: 'Hi', detail: null, created_at: 1000 },
+    ];
+    db.prepare = (sql) => ({ bind: (...bindings) => ({ all: async () => ({ results: rows }) }) });
+    const cookie = await sessionCookieFor({ sub: 1, username: 'admin1', role: 'admin' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/admin/audit-log', { headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.results.length, 2);
+    assert.equal(data.results[0].id, 2);
+    assert.deepEqual(data.results[0].detail, [{ field: 'role', before: 'member', after: 'admin' }]);
+    assert.equal(data.results[1].detail, null);
+  });
+
+  test('should pass the before cursor and limit through as bound parameters', async () => {
+    const db = mockDB();
+    const cookie = await sessionCookieFor({ sub: 1, username: 'admin1', role: 'admin' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/admin/audit-log?before=50&limit=10', { headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 200);
+    const call = db.calls.find(c => c.op === 'all');
+    assert.match(call.sql, /WHERE id < \?/);
+    assert.deepEqual(call.bindings, [50, 10]);
+  });
+});
+
+// Structural guarantee, not something to unit test: no PATCH/DELETE route
+// exists for /api/admin/audit-log anywhere in worker.js. If a future change
+// adds one, re-read docs/plan-audit-log.md's Chunk 0/gotchas first — an
+// editable or prunable audit log defeats the feature's purpose.
 
 // ─── Page rendering (served through env.ASSETS, backed by real public/*.html) ──
 // These exercise the actual SSR injection paths in worker.js — the class of bug

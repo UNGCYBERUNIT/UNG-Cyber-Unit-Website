@@ -80,6 +80,16 @@ a real but private account → `403` (no data). The leaderboard links every user
 opened, not by hiding the link. `/members` is different: it's a browsable list gated to
 `is_public = 1` users only, so it never links to a private profile in the first place.
 
+**Admin audit log** (see `docs/plan-audit-log.md`): `logAudit()` in worker.js writes an
+append-only row to `audit_log` for the five destructive/privilege-altering mutations in the
+app — role change (`PATCH /api/admin/users/:id`), user delete (`DELETE
+/api/admin/users/:id`), announcement create/edit/delete, and room delete (`DELETE
+/api/rooms/:code`, instructor or admin). Everywhere it's called, the `logAudit()` statement
+rides in the *same* `env.DB.batch([...])` as the mutation it logs, so the two commit
+atomically. **No PATCH/DELETE route for `audit_log` should ever be added** — not even a "clear
+log" admin button — that would defeat the feature's purpose; treat adding one as a deliberate,
+separately-reviewed decision, not a routine change.
+
 **Discord account pairing** (see `docs/plan-discord-pairing.md`): `users.discord_id` /
 `discord_username` / `discord_linked_at`, linked via a real Discord OAuth (`identify` scope)
 flow at `/api/discord/link/start` → `/api/discord/callback` → `/api/discord/unlink` — not a
