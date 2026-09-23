@@ -231,6 +231,16 @@ async function renderTopicPage() {
     badge.className   = `badge badge-${topic.difficulty.toLowerCase()}`;
     document.getElementById('topicReadTime').textContent = topic.readTime;
 
+    const cheatSheetLink = document.getElementById('cheatSheetLink');
+    if (cheatSheetLink) {
+      if (topic.hasCheatSheet) {
+        cheatSheetLink.href = `/cheatsheet/${topic.id}`;
+        cheatSheetLink.hidden = false;
+      } else {
+        cheatSheetLink.hidden = true;
+      }
+    }
+
     // Illustration (inline SVG)
     document.getElementById('topicIllustration').innerHTML = getTopicSVG(topic.id, topic.icon, topic.title);
 

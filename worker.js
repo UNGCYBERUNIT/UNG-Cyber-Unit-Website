@@ -880,6 +880,11 @@ const topics = [
   },
 ];
 
+// Topic ids with a one-page PDF cheat-sheet at public/cheatsheets/<id>.pdf.
+// A plain in-code list (not derived from `topics`) since not every topic has
+// one — the topic page hides the download link/button when the id isn't here.
+const topicsWithCheatSheet = new Set([]);
+
 // ─── Beginner Cyber Pathway ───────────────────────────────────────────────────
 // A guided, mentor-narrated sequence over the topics above for someone brand new
 // to cyber. Ordered as an emotional arc: why → threats → defense → mechanics →
@@ -1779,6 +1784,7 @@ export {
   dateStrUTC,
   nextStreak,
   topics,
+  topicsWithCheatSheet,
   pathwayStages,
   pathwayStageTopics,
   pathwayBadges,
@@ -3400,6 +3406,10 @@ export default {
         // Downloadable workshop assets (zip/pdf/pptx) linked from
         // /log-analysis-challenge — not standalone content pages worth indexing.
         'Disallow: /challenges/',
+        // Same reasoning as the SOP PDF above — the raw per-topic cheat-sheet
+        // files are reachable at their static path but only the canonical
+        // /cheatsheet/:id route should be indexed.
+        'Disallow: /cheatsheets/',
         '',
         'Sitemap: https://ungcyberunit.org/sitemap.xml',
         '',
@@ -3424,6 +3434,7 @@ export default {
     if (path === '/api/topics') {
       const summary = topics.map(({ id, title, icon, shortDesc, image, difficulty, readTime }) => ({
         id, title, icon, shortDesc, image, difficulty, readTime,
+        hasCheatSheet: topicsWithCheatSheet.has(id),
       }));
       const headers = addSecurityHeaders(new Headers({ 'Content-Type': 'application/json' }));
       return new Response(JSON.stringify(summary), { headers });
@@ -3438,7 +3449,11 @@ export default {
         return new Response(JSON.stringify({ error: 'Topic not found' }), { status: 404, headers });
       }
       const headers = addSecurityHeaders(new Headers({ 'Content-Type': 'application/json' }));
-      return new Response(JSON.stringify({ ...topic, ...(topicFraming[topic.id] || {}) }), { headers });
+      return new Response(JSON.stringify({
+        ...topic,
+        ...(topicFraming[topic.id] || {}),
+        hasCheatSheet: topicsWithCheatSheet.has(topic.id),
+      }), { headers });
     }
 
     // ── API: instructor-only challenge answer keys ────────────────────────────
@@ -3524,6 +3539,24 @@ export default {
       `).bind(session.sub, challengeId, partId, Date.now()).run();
 
       return jsonResponse({ correct: true });
+    }
+
+    // ── Per-topic cheat-sheet PDF ─────────────────────────────────────────────
+    // Same "friendly route → static asset" idea as /sop, but per-topic and
+    // dynamic. Unlike the HTML view routes below, this response has no
+    // worker-injected per-request content, so it keeps normal asset
+    // caching (no ETag/Cache-Control stripping).
+    const cheatSheetMatch = path.match(/^\/cheatsheet\/(\w+)$/);
+    if (cheatSheetMatch) {
+      const id = cheatSheetMatch[1];
+      if (!topics.some(t => t.id === id) || !topicsWithCheatSheet.has(id)) {
+        return notFoundResponse();
+      }
+      const assetUrl = new URL(`/cheatsheets/${id}.pdf`, url.origin);
+      const assetResponse = await env.ASSETS.fetch(assetUrl.toString());
+      if (!assetResponse.ok) return notFoundResponse();
+      const headers = addSecurityHeaders(new Headers(assetResponse.headers));
+      return new Response(assetResponse.body, { status: assetResponse.status, headers });
     }
 
     // ── Static assets: serve from the [assets] binding ───────────────────────
@@ -3620,6 +3653,12 @@ export default {
               .replace('<h1 class="topic-title" id="topicTitle">Loading...</h1>', `<h1 class="topic-title" id="topicTitle">${escapeHtml(topic.title)}</h1>`)
               .replace('<span class="badge badge-beginner" id="topicDifficulty">Beginner</span>', `<span class="badge badge-${topic.difficulty.toLowerCase()}" id="topicDifficulty">${escapeHtml(topic.difficulty)}</span>`)
               .replace('<span class="read-time" id="topicReadTime"></span>', `<span class="read-time" id="topicReadTime">${escapeHtml(topic.readTime)}</span>`)
+              .replace(
+                '<a href="#" id="cheatSheetLink" class="btn btn-sm" hidden>Download Cheat-Sheet</a>',
+                topicsWithCheatSheet.has(topic.id)
+                  ? `<a href="/cheatsheet/${topic.id}" id="cheatSheetLink" class="btn btn-sm">Download Cheat-Sheet</a>`
+                  : '<a href="#" id="cheatSheetLink" class="btn btn-sm" hidden>Download Cheat-Sheet</a>'
+              )
               .replace('<div id="topicIllustration"></div>', `<div id="topicIllustration">${getTopicSVG(topic.id, topic.icon, topic.title)}</div>`)
               .replace(
                 `<article class="topic-content" id="topicContent" aria-label="Topic content">

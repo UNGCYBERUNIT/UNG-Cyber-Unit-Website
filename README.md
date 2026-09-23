@@ -138,6 +138,7 @@ cybersec-basics/
 | `/resources` | External learning resources |
 | `/about` | Unit overview and org chart |
 | `/sop` | Cyber Unit SOP (PDF) |
+| `/cheatsheet/:id` | Per-topic one-page PDF quick-reference, when one exists for that topic id (`public/cheatsheets/<id>.pdf`, `Disallow`ed in robots.txt like `/sop`'s raw file). Linked from a "Download Cheat-Sheet" button on the topic page, shown only for topics in the in-code `topicsWithCheatSheet` set. |
 | `/log-analysis-challenge` | Log Analysis & Regex workshop — five downloadable log-hunting challenges, the slide deck, and a regex quick-reference PDF (assets under `public/challenges/log-analysis-regex/`, `Disallow`ed in robots.txt). Instructors/admins also see a link to the answer key, served from `/api/challenges/:id/answer-key` above. |
 | `/network-traffic-challenge` | Network Traffic Analysis & Wireshark workshop — a live-demo Telnet-cleartext capture challenge, the class `.pcapng`, and the slide deck (assets under `public/challenges/wireshark-nta/`, `Disallow`ed in robots.txt). Instructors/admins also see a link to the answer key. |
 | `/instructor` | Instructor panel — create/manage Quiz Rooms, grade free responses |

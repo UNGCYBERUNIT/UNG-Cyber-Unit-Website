@@ -30,6 +30,7 @@ import worker, {
   dateStrUTC,
   nextStreak,
   topics,
+  topicsWithCheatSheet,
   pathwayStages,
   pathwayStageTopics,
   pathwayBadges,
@@ -937,6 +938,7 @@ describe('GET /robots.txt', () => {
     const body = await res.text();
     assert.match(body, /Sitemap: https:\/\/ungcyberunit\.org\/sitemap\.xml/);
     assert.doesNotMatch(body, /\/admin|\/instructor|\/profile/); // don't advertise private pages
+    assert.match(body, /Disallow: \/cheatsheets\//); // raw PDF path stays out of the index
   });
 });
 
@@ -955,6 +957,26 @@ describe('GET /api/topic/:id', () => {
     // Error handling.
     const res = await worker.fetch(new Request('https://example.com/api/topic/zz'), {});
     assert.equal(res.status, 404);
+  });
+
+  test('should reflect hasCheatSheet from topicsWithCheatSheet', async () => {
+    assert.equal((await (await worker.fetch(new Request('https://example.com/api/topic/01'), {})).json()).hasCheatSheet, false);
+    topicsWithCheatSheet.add('01');
+    try {
+      assert.equal((await (await worker.fetch(new Request('https://example.com/api/topic/01'), {})).json()).hasCheatSheet, true);
+    } finally {
+      topicsWithCheatSheet.delete('01');
+    }
+  });
+});
+
+describe('GET /api/topics', () => {
+  test('should include hasCheatSheet on every topic summary', async () => {
+    const res = await worker.fetch(new Request('https://example.com/api/topics'), {});
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.length, topics.length);
+    assert.ok(data.every(t => typeof t.hasCheatSheet === 'boolean'));
   });
 });
 
@@ -1991,6 +2013,45 @@ describe('GET /sop (SOP PDF via the canonical route)', () => {
     const res = await worker.fetch(new Request('https://example.com/sop'), { ASSETS: mockAssets() });
     assert.equal(res.status, 200);
     assert.match(res.headers.get('Content-Type'), /application\/pdf/);
+  });
+});
+
+describe('GET /cheatsheet/:id', () => {
+  // Standalone mock that always returns a fake PDF for /cheatsheets/*.pdf,
+  // independent of what files actually exist in public/ (mockAssets() only
+  // serves real files, and no real cheat-sheet PDFs exist yet).
+  function mockCheatSheetAssets() {
+    return {
+      async fetch(input) {
+        const p = new URL(typeof input === 'string' ? input : input.url).pathname;
+        if (p === '/cheatsheets/01.pdf') {
+          return new Response('%PDF-fake', { status: 200, headers: { 'Content-Type': 'application/pdf' } });
+        }
+        return new Response('Not found', { status: 404 });
+      },
+    };
+  }
+
+  test('should 200 with a PDF content-type for a known id with a sheet', async () => {
+    topicsWithCheatSheet.add('01');
+    try {
+      const res = await worker.fetch(new Request('https://example.com/cheatsheet/01'), { ASSETS: mockCheatSheetAssets() });
+      assert.equal(res.status, 200);
+      assert.match(res.headers.get('Content-Type'), /application\/pdf/);
+    } finally {
+      topicsWithCheatSheet.delete('01');
+    }
+  });
+
+  test('should 404 for an unknown topic id', async () => {
+    const res = await worker.fetch(new Request('https://example.com/cheatsheet/zz'), { ASSETS: mockCheatSheetAssets() });
+    assert.equal(res.status, 404);
+  });
+
+  test('should 404 for a known topic id with no sheet on disk', async () => {
+    // '01' is a real topic id but not in topicsWithCheatSheet in this test.
+    const res = await worker.fetch(new Request('https://example.com/cheatsheet/01'), { ASSETS: mockCheatSheetAssets() });
+    assert.equal(res.status, 404);
   });
 });
 

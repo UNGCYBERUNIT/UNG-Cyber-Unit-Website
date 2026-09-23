@@ -48,6 +48,10 @@ from that array automatically. Two things that do NOT auto-update:
   stage's `topicIds` in the `pathwayStages` array.
 - **Topic hook/takeaway**: add an entry in the `topicFraming` map (keyed by topic id) so
   the topic page gets its mentor intro + key takeaway.
+- **Cheat-sheet PDF** (optional): the "Download Cheat-Sheet" button on `/topic/:id` only
+  shows for topic ids in the `topicsWithCheatSheet` set in `worker.js`. Drop the PDF at
+  `public/cheatsheets/<id>.pdf` and add the id to that set — no other code changes needed,
+  it's served at `/cheatsheet/:id` following the same pattern as `/sop`.
 
 **Homepage topic grid** and the **`/start` pathway** are server-rendered by the worker
 (`homeTopicCards()` on `path === '/'`, `pathwayHtml()` on `path === '/start'`) so crawlers
