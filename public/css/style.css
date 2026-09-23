@@ -1817,9 +1817,16 @@ footer {
   color: var(--accent);
 }
 .nav-dropdown-menu {
-  position: absolute;
-  top: calc(100% + 0.5rem);
-  right: 0;
+  /* Fixed + centered on the *viewport*, not anchored to the toggle button —
+     the button sits left of the avatar/username/sign-out controls, so a
+     button-anchored menu drifts off-center from the page as a whole. Fixed
+     positioning also means it isn't clipped by any ancestor's overflow and
+     stays put regardless of scroll. */
+  position: fixed;
+  top: 68px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: calc(100vw - 2rem);
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -1840,22 +1847,20 @@ footer {
 @media (min-width: 769px) {
   /* Each content-type section becomes its own column, so the menu grows
      wider rather than taller as sections/links accumulate. Wraps onto a
-     second row (rather than clipping) if wireNavDropdown()'s JS-computed
-     max-width — capped to the space actually available to the menu's left,
-     since it's right-anchored to the toggle button, not the viewport edge —
-     can't fit every column on one line. */
+     second row (rather than clipping) if the viewport isn't wide enough
+     to fit every column on one line within max-width above. */
   .nav-dropdown-menu {
     flex-direction: row;
     flex-wrap: wrap;
     align-items: stretch;
     padding: 0.4rem 0;
     min-width: 0;
-    /* Without an explicit width, an absolutely-positioned wrapping flex
-       container's shrink-to-fit sizing resolves toward its narrowest
-       possible layout (one column per row) even when max-width leaves
-       plenty of room for a single row — asking for its full preferred
-       (max-content) width here, clamped by the JS-set max-width above,
-       is what actually gets every column onto one row when there's space. */
+    /* Without an explicit width, a wrapping flex container's shrink-to-fit
+       sizing resolves toward its narrowest possible layout (one column per
+       row) even when max-width leaves plenty of room for a single row —
+       asking for its full preferred (max-content) width here, clamped by
+       max-width above, is what actually gets every column onto one row
+       when there's space. */
     width: max-content;
   }
   .nav-dropdown-col {

@@ -804,18 +804,6 @@ function wireNavDropdown(btnId, menuId) {
     const nowOpen = menu.hidden;
     menu.hidden = !nowOpen;
     btn.setAttribute('aria-expanded', nowOpen);
-
-    // The menu is right-anchored to the toggle button, which doesn't sit at
-    // the true right edge of the viewport (the avatar/username and sign
-    // out/in button trail it). On the wide-screen side-by-side column
-    // layout, a right-anchored multi-column menu can otherwise render past
-    // the left edge of the viewport on narrower desktop widths — cap its
-    // width to whatever space is actually available there. Only matters
-    // above the mobile breakpoint, where the columns layout applies.
-    if (nowOpen && window.matchMedia('(min-width: 769px)').matches) {
-      const available = Math.round(btn.getBoundingClientRect().right - 16);
-      menu.style.maxWidth = `${available}px`;
-    }
   });
   document.addEventListener('click', e => {
     if (!menu.hidden && !menu.contains(e.target)) {
