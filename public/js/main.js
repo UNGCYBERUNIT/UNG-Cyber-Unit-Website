@@ -1444,11 +1444,33 @@ async function initInstructorPanel() {
   // ── Question source mode toggle ──
   const manualBuilderWrap = document.getElementById('manualBuilderWrap');
   const fileImportWrap = document.getElementById('fileImportWrap');
-  document.getElementById('questionSourceMode')?.addEventListener('change', e => {
-    const isManual = e.target.value === 'manual';
-    manualBuilderWrap.hidden = !isManual;
-    fileImportWrap.hidden = isManual;
+  const templateWrap = document.getElementById('templateWrap');
+  let templatesLoaded = false;
+
+  document.getElementById('questionSourceMode')?.addEventListener('change', async e => {
+    const mode = e.target.value;
+    manualBuilderWrap.hidden = mode !== 'manual';
+    fileImportWrap.hidden = mode !== 'file';
+    templateWrap.hidden = mode !== 'template';
+    if (mode === 'template' && !templatesLoaded) {
+      templatesLoaded = true;
+      await loadTemplateOptions();
+    }
   });
+
+  async function loadTemplateOptions() {
+    const select = document.getElementById('templateSelect');
+    try {
+      const res = await fetch('/api/question-bank');
+      if (!res.ok) throw new Error();
+      const { results } = await res.json();
+      select.innerHTML = results.length
+        ? results.map(b => `<option value="${b.id}">${escHtml(b.title)} (${b.question_count} questions)</option>`).join('')
+        : '<option value="">No saved banks yet — save a room as a template first</option>';
+    } catch {
+      select.innerHTML = '<option value="">Failed to load saved banks</option>';
+    }
+  }
 
   // ── Manual quiz builder ──
   const ANSWER_LETTERS = ['A', 'B', 'C', 'D'];
@@ -1598,6 +1620,67 @@ async function initInstructorPanel() {
 
   await loadRooms();
   await loadTopicCompletion();
+  await loadQuestionBank();
+
+  // Private per-instructor reusable question templates. No delete-then-
+  // recreate ownership loophole here — DELETE /api/question-bank/:id already
+  // enforces created_by === session.sub (or admin) server-side.
+  async function loadQuestionBank() {
+    const wrap = document.getElementById('questionBankWrap');
+    if (!wrap) return;
+    try {
+      const res = await fetch('/api/question-bank');
+      if (!res.ok) throw new Error();
+      const { results } = await res.json();
+      wrap.innerHTML = results.length
+        ? results.map(b => `
+          <div class="card announcement-card">
+            <h3 class="card-title">${escHtml(b.title)}</h3>
+            <div class="card-footer announcement-footer">
+              <span class="announcement-meta">${b.question_count} question${b.question_count === 1 ? '' : 's'} · saved ${new Date(b.created_at).toLocaleDateString()}</span>
+              <div class="announcement-actions">
+                <button type="button" class="btn btn-sm btn-danger delete-bank-btn" data-id="${b.id}" data-title="${escHtml(b.title)}">Delete</button>
+              </div>
+            </div>
+          </div>`).join('')
+        : `<p style="color:var(--text-muted);font-family:'Share Tech Mono',monospace;">No saved question banks yet — use "Save as Template" from a room's results view.</p>`;
+
+      wrap.querySelectorAll('.delete-bank-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          confirmDialog(`Delete question bank "${btn.dataset.title}"? This cannot be undone.`, async () => {
+            const res = await fetch(`/api/question-bank/${btn.dataset.id}`, { method: 'DELETE' });
+            if (res.ok) {
+              await loadQuestionBank();
+              templatesLoaded = false; // force a refetch next time the "Use a Saved Template" mode is opened
+            } else {
+              alert('Failed to delete question bank.');
+            }
+          }, 'Delete');
+        });
+      });
+    } catch {
+      wrap.innerHTML = `<p style="color:var(--danger);font-family:'Share Tech Mono',monospace;">Failed to load question bank.</p>`;
+    }
+  }
+
+  document.getElementById('saveAsTemplateBtn')?.addEventListener('click', () => {
+    if (!currentResultsData) return;
+    const defaultTitle = currentResultsData.room?.title ?? '';
+    const title = prompt('Save as a question bank template. Title:', defaultTitle);
+    if (title === null) return; // cancelled
+    (async () => {
+      const res = await fetch(`/api/rooms/${currentResultsData.code}/save-as-template`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: title.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) { alert(data.error || 'Failed to save template.'); return; }
+      await loadQuestionBank();
+      templatesLoaded = false;
+      alert(`Saved "${data.title}" (${data.questionCount} questions) to your Question Bank.`);
+    })();
+  });
 
   // Site-wide (not per-class — quiz_results has no roster/class concept, see
   // /api/instructor/topic-completion) topic-quiz completion, read-only.
@@ -1659,6 +1742,10 @@ async function initInstructorPanel() {
       if (result.error) { errEl.textContent = result.error; errEl.hidden = false; return; }
       const blob = new Blob([JSON.stringify(result.questions)], { type: 'application/json' });
       fd.append('file', blob, 'manual-questions.json');
+    } else if (mode === 'template') {
+      const templateId = document.getElementById('templateSelect').value;
+      if (!templateId) { errEl.textContent = 'Please select a saved question bank.'; errEl.hidden = false; return; }
+      fd.append('template_id', templateId);
     } else {
       if (!fileInput.files.length) { errEl.textContent = 'Please select a .csv or .json question file.'; errEl.hidden = false; return; }
       fd.append('file', fileInput.files[0]);
@@ -1679,6 +1766,7 @@ async function initInstructorPanel() {
       document.getElementById('fileInputText').textContent = 'Choose .csv or .json file...';
       manualBuilderWrap.hidden = false;
       fileImportWrap.hidden = true;
+      templateWrap.hidden = true;
       manualList.innerHTML = '';
       addQuestionCard();
       await loadRooms();
@@ -2068,6 +2156,7 @@ async function initInstructorPanel() {
   function showSection(section) {
     document.getElementById('createRoomSection').hidden = section !== 'rooms';
     document.getElementById('topicCompletionSection').hidden = section !== 'rooms';
+    document.getElementById('questionBankSection').hidden = section !== 'rooms';
     document.getElementById('myRoomsSection').hidden = section !== 'rooms';
     document.getElementById('resultsSection').hidden = section !== 'results';
   }

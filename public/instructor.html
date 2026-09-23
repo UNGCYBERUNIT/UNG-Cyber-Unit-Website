@@ -54,6 +54,7 @@
               <select id="questionSourceMode">
                 <option value="manual" selected>Build Manually</option>
                 <option value="file">Import from File (.csv / .json)</option>
+                <option value="template">Use a Saved Template</option>
               </select>
             </div>
 
@@ -61,6 +62,14 @@
             <div id="manualBuilderWrap" style="grid-column: 1 / -1;">
               <div id="manualQuestionsList"></div>
               <button type="button" class="btn btn-sm" id="addQuestionBtn">+ Add Question</button>
+            </div>
+
+            <!-- Saved template (hidden unless "Use a Saved Template" selected) -->
+            <div class="form-group" id="templateWrap" style="grid-column: 1 / -1;" hidden>
+              <label for="templateSelect">Question Bank</label>
+              <select id="templateSelect">
+                <option value="">Loading your saved banks...</option>
+              </select>
             </div>
 
             <!-- File import (hidden unless "Import from File" selected) -->
@@ -188,6 +197,14 @@
         </div>
       </section>
 
+      <!-- ─── Question Bank (private per-instructor, reusable templates) ── -->
+      <section id="questionBankSection" class="instructor-section">
+        <h2 class="instructor-section-heading">// Question Bank</h2>
+        <div id="questionBankWrap">
+          <p style="color: var(--text-muted); font-family: 'Share Tech Mono', monospace;">Loading...</p>
+        </div>
+      </section>
+
       <section id="myRoomsSection" class="instructor-section">
         <h2 class="instructor-section-heading">// My Rooms</h2>
         <div id="roomsTableWrap">
@@ -205,7 +222,8 @@
               Code: <span id="resultsRoomCode" style="color: var(--text);"></span>
             </p>
           </div>
-          <button class="btn btn-sm" id="exportCsvBtn" style="margin-left: auto;">Export CSV</button>
+          <button class="btn btn-sm" id="saveAsTemplateBtn" style="margin-left: auto;">Save as Template</button>
+          <button class="btn btn-sm" id="exportCsvBtn">Export CSV</button>
         </div>
         <div id="resultsSummary"></div>
         <div id="resultsAnalytics" style="margin-top: 1.5rem;"></div>

@@ -80,6 +80,17 @@ a real but private account → `403` (no data). The leaderboard links every user
 opened, not by hiding the link. `/members` is different: it's a browsable list gated to
 `is_public = 1` users only, so it never links to a private profile in the first place.
 
+**Question Bank** (see `docs/plan-question-bank.md`): `question_bank`/`question_bank_items`
+are reusable question templates, private per-instructor — same ownership pattern as Quiz
+Rooms (`requireRole('instructor')` + `created_by === session.sub || admin`), no shared/
+department bank. A saved template is a **snapshot, not a live reference** —
+`question_bank_items` has no foreign key back to `quiz_room_questions`, and its rows are a
+plain copy taken at `POST /api/rooms/:code/save-as-template` time. Don't "fix" this into a
+live sync — the whole point is that a template survives the deletion of the room it was
+originally saved from (often exactly why an instructor saves one, right before deleting a
+throwaway room). `POST /api/rooms` accepts a `template_id` form field as an alternative to
+the uploaded `file` field for question source.
+
 **Admin audit log** (see `docs/plan-audit-log.md`): `logAudit()` in worker.js writes an
 append-only row to `audit_log` for the five destructive/privilege-altering mutations in the
 app — role change (`PATCH /api/admin/users/:id`), user delete (`DELETE

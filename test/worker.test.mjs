@@ -2289,6 +2289,300 @@ describe('GET /api/instructor/topic-completion', () => {
   });
 });
 
+// ─── Question Bank ────────────────────────────────────────────────────────────
+// A mock D1 dispatched by matching each query's SQL against ordered
+// [regex, result] lists for `first`/`all` (first match wins) — same style as
+// mockAuditActionDB/mockRoomAnalyticsDB above. `result` may be a function of
+// the call's bindings, for fixtures that need to vary by id.
+function mockQuestionBankDB({ first = [], all = [] } = {}) {
+  const calls = [];
+  return {
+    calls,
+    prepare(sql) {
+      return {
+        bind: (...bindings) => ({
+          sql, bindings,
+          first: async () => {
+            calls.push({ sql, bindings, op: 'first' });
+            for (const [re, result] of first) if (re.test(sql)) return typeof result === 'function' ? result(bindings) : result;
+            return null;
+          },
+          all: async () => {
+            calls.push({ sql, bindings, op: 'all' });
+            for (const [re, result] of all) if (re.test(sql)) return { results: typeof result === 'function' ? result(bindings) : result };
+            return { results: [] };
+          },
+          run: async () => { calls.push({ sql, bindings, op: 'run' }); return { meta: { last_row_id: 1, changes: 1 } }; },
+        }),
+      };
+    },
+    async batch(stmts) {
+      calls.push({ op: 'batch', sqls: stmts.map(s => s.sql), bindings: stmts.map(s => s.bindings) });
+      return stmts.map(() => ({ meta: { last_row_id: 1, changes: 1 } }));
+    },
+  };
+}
+
+const SAMPLE_QUESTIONS = [
+  { question: 'Q1', type: 'multiple_choice', answers: ['A', 'B'], correct: 0, explanation: '' },
+];
+
+describe('POST /api/question-bank', () => {
+  const post = (body, cookie, db) => worker.fetch(
+    new Request('https://example.com/api/question-bank', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(cookie ? { Cookie: cookie } : {}) },
+      body: JSON.stringify(body),
+    }),
+    { JWT_SECRET: SECRET, DB: db },
+  );
+
+  test('should reject a non-instructor', async () => {
+    const cookie = await sessionCookieFor({ sub: 1, username: 'alice', role: 'member' });
+    const res = await post({ title: 'Bank', questions: SAMPLE_QUESTIONS }, cookie, mockQuestionBankDB({}));
+    assert.equal(res.status, 403);
+  });
+
+  test('should reject an empty title', async () => {
+    const cookie = await sessionCookieFor({ sub: 1, username: 'inst1', role: 'instructor' });
+    const res = await post({ title: '', questions: SAMPLE_QUESTIONS }, cookie, mockQuestionBankDB({}));
+    assert.equal(res.status, 400);
+  });
+
+  test('should reuse validateJSONQuestions for question-shape errors', async () => {
+    const cookie = await sessionCookieFor({ sub: 1, username: 'inst1', role: 'instructor' });
+    const res = await post({ title: 'Bank', questions: [{ question: '' }] }, cookie, mockQuestionBankDB({}));
+    assert.equal(res.status, 400);
+    const data = await res.json();
+    assert.match(data.error, /question text is required/);
+  });
+
+  test('should create the bank and its items for an instructor', async () => {
+    const db = mockQuestionBankDB({});
+    const cookie = await sessionCookieFor({ sub: 1, username: 'inst1', role: 'instructor' });
+    const res = await post({ title: 'Networking Basics', questions: SAMPLE_QUESTIONS }, cookie, db);
+    assert.equal(res.status, 201);
+    const data = await res.json();
+    assert.equal(data.title, 'Networking Basics');
+    assert.equal(data.questionCount, 1);
+
+    const bankInsert = db.calls.find(c => c.op === 'run' && /INSERT INTO question_bank \(/.test(c.sql));
+    assert.ok(bankInsert);
+    assert.deepEqual(bankInsert.bindings, ['Networking Basics', 1, data.created_at]);
+
+    const batchCall = db.calls.find(c => c.op === 'batch');
+    assert.ok(batchCall);
+    assert.match(batchCall.sqls[0], /INSERT INTO question_bank_items/);
+    assert.deepEqual(batchCall.bindings[0], [1, 0, 'multiple_choice', 'Q1', JSON.stringify(['A', 'B']), 0, '']);
+  });
+});
+
+describe('GET /api/question-bank', () => {
+  test('should only return the caller\'s own banks', async () => {
+    const db = mockQuestionBankDB({
+      all: [[/FROM question_bank b/, [{ id: 1, title: 'Mine', created_at: 1000, question_count: 3 }]]],
+    });
+    const cookie = await sessionCookieFor({ sub: 1, username: 'inst1', role: 'instructor' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/question-bank', { headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.results.length, 1);
+    const listCall = db.calls.find(c => c.op === 'all');
+    assert.match(listCall.sql, /WHERE b\.created_by = \?/);
+    assert.deepEqual(listCall.bindings, [1]);
+  });
+});
+
+describe('GET /api/question-bank/:id', () => {
+  test('should 404 for an unknown bank', async () => {
+    const cookie = await sessionCookieFor({ sub: 1, username: 'inst1', role: 'instructor' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/question-bank/5', { headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: mockQuestionBankDB({}) },
+    );
+    assert.equal(res.status, 404);
+  });
+
+  test('should 403 for a non-owning instructor', async () => {
+    const db = mockQuestionBankDB({
+      first: [[/FROM question_bank WHERE id = \?/, { id: 5, title: 'Bank', created_by: 99, created_at: 1000 }]],
+    });
+    const cookie = await sessionCookieFor({ sub: 1, username: 'inst1', role: 'instructor' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/question-bank/5', { headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 403);
+  });
+
+  test('should return items with parsed answers for the owner', async () => {
+    const db = mockQuestionBankDB({
+      first: [[/FROM question_bank WHERE id = \?/, { id: 5, title: 'Bank', created_by: 1, created_at: 1000 }]],
+      all: [[/FROM question_bank_items WHERE bank_id = \?/, [
+        { id: 10, sort_order: 0, type: 'multiple_choice', question: 'Q1', answers: JSON.stringify(['A', 'B']), correct: 0, explanation: '' },
+      ]]],
+    });
+    const cookie = await sessionCookieFor({ sub: 1, username: 'inst1', role: 'instructor' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/question-bank/5', { headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.deepEqual(data.questions[0].answers, ['A', 'B']);
+  });
+});
+
+describe('DELETE /api/question-bank/:id', () => {
+  test('should 404 for an unknown bank', async () => {
+    const cookie = await sessionCookieFor({ sub: 1, username: 'inst1', role: 'instructor' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/question-bank/5', { method: 'DELETE', headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: mockQuestionBankDB({}) },
+    );
+    assert.equal(res.status, 404);
+  });
+
+  test('should 403 for a non-owning instructor', async () => {
+    const db = mockQuestionBankDB({
+      first: [[/FROM question_bank WHERE id = \?/, { id: 5, created_by: 99 }]],
+    });
+    const cookie = await sessionCookieFor({ sub: 1, username: 'inst1', role: 'instructor' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/question-bank/5', { method: 'DELETE', headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 403);
+  });
+
+  test('should cascade-delete items then the bank for the owner', async () => {
+    const db = mockQuestionBankDB({
+      first: [[/FROM question_bank WHERE id = \?/, { id: 5, created_by: 1 }]],
+    });
+    const cookie = await sessionCookieFor({ sub: 1, username: 'inst1', role: 'instructor' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/question-bank/5', { method: 'DELETE', headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 200);
+    const batchCall = db.calls.find(c => c.op === 'batch');
+    assert.match(batchCall.sqls[0], /DELETE FROM question_bank_items WHERE bank_id = \?/);
+    assert.match(batchCall.sqls[1], /DELETE FROM question_bank WHERE id = \?/);
+  });
+});
+
+describe('POST /api/rooms/:code/save-as-template', () => {
+  test('should 404 for an unknown room', async () => {
+    const cookie = await sessionCookieFor({ sub: 1, username: 'inst1', role: 'instructor' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/rooms/ABCD-2345/save-as-template', { method: 'POST', headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: mockQuestionBankDB({}) },
+    );
+    assert.equal(res.status, 404);
+  });
+
+  test('should 403 for a non-owning instructor', async () => {
+    const db = mockQuestionBankDB({
+      first: [[/FROM quiz_rooms WHERE code = \?/, { id: 1, title: 'Room', created_by: 99 }]],
+    });
+    const cookie = await sessionCookieFor({ sub: 1, username: 'inst1', role: 'instructor' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/rooms/ABCD-2345/save-as-template', { method: 'POST', headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 403);
+  });
+
+  test('should 400 when the room has no questions', async () => {
+    const db = mockQuestionBankDB({
+      first: [[/FROM quiz_rooms WHERE code = \?/, { id: 1, title: 'Room', created_by: 1 }]],
+      all: [[/FROM quiz_room_questions WHERE room_id = \?/, []]],
+    });
+    const cookie = await sessionCookieFor({ sub: 1, username: 'inst1', role: 'instructor' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/rooms/ABCD-2345/save-as-template', { method: 'POST', headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 400);
+  });
+
+  test('should snapshot the room\'s questions into a new bank, defaulting the title to the room\'s', async () => {
+    const db = mockQuestionBankDB({
+      first: [[/FROM quiz_rooms WHERE code = \?/, { id: 1, title: 'Promo Board', created_by: 1 }]],
+      all: [[/FROM quiz_room_questions WHERE room_id = \?/, [
+        { sort_order: 0, type: 'multiple_choice', question: 'Q1', answers: JSON.stringify(['A', 'B']), correct: 0, explanation: '' },
+      ]]],
+    });
+    const cookie = await sessionCookieFor({ sub: 1, username: 'inst1', role: 'instructor' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/rooms/ABCD-2345/save-as-template', {
+        method: 'POST', headers: { Cookie: cookie },
+      }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 201);
+    const data = await res.json();
+    assert.equal(data.title, 'Promo Board');
+    const bankInsert = db.calls.find(c => c.op === 'run' && /INSERT INTO question_bank \(/.test(c.sql));
+    assert.ok(bankInsert);
+    const batchCall = db.calls.find(c => c.op === 'batch');
+    assert.match(batchCall.sqls[0], /INSERT INTO question_bank_items/);
+  });
+});
+
+describe('POST /api/rooms with template_id', () => {
+  function roomFormData({ templateId, title = 'From Template' } = {}) {
+    const fd = new FormData();
+    fd.set('title', title);
+    fd.set('template_id', String(templateId));
+    return fd;
+  }
+
+  test('should 404 for an unknown template', async () => {
+    const cookie = await sessionCookieFor({ sub: 1, username: 'inst1', role: 'instructor' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/rooms', { method: 'POST', headers: { Cookie: cookie }, body: roomFormData({ templateId: 999 }) }),
+      { JWT_SECRET: SECRET, DB: mockQuestionBankDB({}) },
+    );
+    assert.equal(res.status, 404);
+  });
+
+  test('should reject a template owned by another instructor (403, not silently ignored)', async () => {
+    const db = mockQuestionBankDB({
+      first: [[/FROM question_bank WHERE id = \?/, { id: 5, created_by: 99 }]],
+    });
+    const cookie = await sessionCookieFor({ sub: 1, username: 'inst1', role: 'instructor' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/rooms', { method: 'POST', headers: { Cookie: cookie }, body: roomFormData({ templateId: 5 }) }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 403);
+  });
+
+  test('should create room questions matching the template\'s items', async () => {
+    const db = mockQuestionBankDB({
+      first: [[/FROM question_bank WHERE id = \?/, { id: 5, created_by: 1 }]],
+      all: [[/FROM question_bank_items WHERE bank_id = \?/, [
+        { type: 'multiple_choice', question: 'Q1', answers: JSON.stringify(['A', 'B']), correct: 0, explanation: '' },
+      ]]],
+    });
+    const cookie = await sessionCookieFor({ sub: 1, username: 'inst1', role: 'instructor' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/rooms', { method: 'POST', headers: { Cookie: cookie }, body: roomFormData({ templateId: 5 }) }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 201);
+    const data = await res.json();
+    assert.equal(data.questionCount, 1);
+    const batchCall = db.calls.find(c => c.op === 'batch');
+    assert.match(batchCall.sqls[0], /INSERT INTO quiz_room_questions/);
+    assert.deepEqual(batchCall.bindings[0].slice(2), ['multiple_choice', 'Q1', JSON.stringify(['A', 'B']), 0, '']);
+  });
+});
+
 // ─── Admin audit log ─────────────────────────────────────────────────────────
 // A mock D1 for the five audit-instrumented mutations: `first` is resolved
 // from an ordered [regex, result] list (checked in order, first match wins),

@@ -109,7 +109,7 @@ cybersec-basics/
 │       ├── start.js          # /start pathway page enhancement
 │       └── topic-render.js  # Isomorphic: topic lesson-content renderer, imported by both worker.js and main.js
 ├── worker.js              # Cloudflare Worker — the only entry point: routing, API, auth, security headers
-├── schema.sql              # D1 schema (users [incl. role/streak/last_active/is_public/discord_id], quiz_results, quiz_rooms, quiz_room_questions, quiz_room_attempts, quiz_room_answers, announcements, feedback, challenge_answer_keys, challenge_answers, challenge_completions, and the room_lookup_failures/feedback_rate_limit/email_action_rate_limit/signup_rate_limit/challenge_submit_rate_limit sliding-window rate-limit tables)
+├── schema.sql              # D1 schema (users [incl. role/streak/last_active/is_public/discord_id], quiz_results, quiz_rooms, quiz_room_questions, quiz_room_attempts, quiz_room_answers, question_bank, question_bank_items, announcements, events, audit_log, feedback, challenge_answer_keys, challenge_answers, challenge_completions, and the room_lookup_failures/feedback_rate_limit/email_action_rate_limit/signup_rate_limit/challenge_submit_rate_limit sliding-window rate-limit tables)
 ├── answer-keys/            # (gitignored) local source files for challenge_answer_keys — never committed, re-ingest via `wrangler d1 execute --file`
 ├── test/worker.test.mjs    # Unit tests (see Tests below)
 ├── wrangler.toml           # Cloudflare Workers configuration
@@ -193,7 +193,7 @@ cybersec-basics/
 | `/api/admin/users` (GET) | Admin — list all users |
 | `/api/admin/users/:id` (PATCH/DELETE) | Admin — change a user's role or delete their account (cascades their quiz/room data) |
 | `/api/admin/audit-log?before=&limit=` (GET) | Admin — cursor-paginated, newest-first log of role changes, user deletes, announcement CRUD, and room deletes. Append-only — no PATCH/DELETE route exists for this table |
-| `/api/rooms` (POST/GET) | Instructor — create a room / list your rooms |
+| `/api/rooms` (POST/GET) | Instructor — create a room (from an uploaded file, manual entry, or a `template_id` from your Question Bank) / list your rooms |
 | `/api/rooms/public` | Any logged-in member — browse open public rooms |
 | `/api/rooms/:code/join` | Student — join a room, fetch its questions |
 | `/api/rooms/:code/attempt` (POST) | Student — submit answers |
@@ -204,6 +204,9 @@ cybersec-basics/
 | `/api/rooms/:code` (GET/PATCH/DELETE) | Instructor — view/edit/delete a room |
 | `/api/rooms/:code/attempts/:attemptId` (DELETE) | Instructor — reset a student's attempt |
 | `/api/rooms/:code/answers/:answerId` (PATCH) | Instructor — grade a free-response answer |
+| `/api/rooms/:code/save-as-template` (POST) | Instructor (room owner or admin) — snapshot the room's current questions into a new Question Bank entry (title defaults to the room's) |
+| `/api/question-bank` (POST/GET) | Instructor — save a new reusable question template / list your own templates. Private per-instructor, no shared bank |
+| `/api/question-bank/:id` (GET/DELETE) | Instructor (bank owner or admin) — template detail with items / delete (cascades items) |
 
 ### Scheduled Cleanup
 

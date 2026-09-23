@@ -66,6 +66,30 @@ CREATE TABLE IF NOT EXISTS quiz_room_questions (
   FOREIGN KEY (room_id) REFERENCES quiz_rooms(id)
 );
 
+-- Reusable question templates. Private per-instructor for v1 (no shared/
+-- department bank — see docs/plan-question-bank.md's Chunk 0). Items are a
+-- snapshot (copied values, not a live reference) so a template survives the
+-- deletion of the room it may have originally been saved from.
+CREATE TABLE IF NOT EXISTS question_bank (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  title      TEXT    NOT NULL,
+  created_by INTEGER NOT NULL,
+  created_at INTEGER NOT NULL,
+  FOREIGN KEY (created_by) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS question_bank_items (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  bank_id       INTEGER NOT NULL,
+  sort_order    INTEGER NOT NULL DEFAULT 0,
+  type          TEXT    NOT NULL DEFAULT 'multiple_choice',
+  question      TEXT    NOT NULL,
+  answers       TEXT    NOT NULL,
+  correct       INTEGER,
+  explanation   TEXT    NOT NULL DEFAULT '',
+  FOREIGN KEY (bank_id) REFERENCES question_bank(id)
+);
+
 CREATE TABLE IF NOT EXISTS quiz_room_attempts (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
   room_id      INTEGER NOT NULL,
