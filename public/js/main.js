@@ -95,6 +95,70 @@ function initSmoothScroll() {
 
 // ─── Homepage: Render Topic Grid ──────────────────────────────────────────────
 
+// Cached after the initial fetch so the difficulty filter can re-render
+// client-side without another round-trip.
+let homeTopics = null;
+let homeProgressMap = null;
+
+function topicGridCardHtml(t, progressMap) {
+  const prog = progressMap[t.id];
+  const progressBadge = prog
+    ? `<div class="card-progress" aria-label="Quiz score: ${prog.score} of ${prog.total}">
+         ${prog.score}/${prog.total}${prog.score === prog.total ? ' <span class="progress-star" aria-hidden="true">★</span>' : ''}
+       </div>`
+    : '';
+  return `
+    <a href="/topic/${t.id}" class="card card-link${prog ? ' card-completed' : ''}" aria-label="${escHtml(t.title)}">
+      ${progressBadge}
+      <div class="card-icon" aria-hidden="true">${t.icon}</div>
+      <h3 class="card-title">${escHtml(t.title)}</h3>
+      <p class="card-desc">${escHtml(t.shortDesc)}</p>
+      <div class="card-footer">
+        <span class="badge badge-${t.difficulty.toLowerCase()}">${escHtml(t.difficulty)}</span>
+        <span class="btn btn-sm" aria-hidden="true">Explore →</span>
+      </div>
+    </a>`;
+}
+
+function renderFilteredTopicGrid(difficulty) {
+  const grid = document.getElementById('topicGrid');
+  if (!grid || !homeTopics) return;
+  const filtered = difficulty
+    ? homeTopics.filter(t => t.difficulty.toLowerCase() === difficulty)
+    : homeTopics;
+  grid.innerHTML = filtered.length
+    ? filtered.map(t => topicGridCardHtml(t, homeProgressMap)).join('')
+    : '<p style="color:var(--text-muted);font-family:\'Share Tech Mono\',monospace;">No topics match this filter yet.</p>';
+}
+
+function initDifficultyFilter() {
+  const bar = document.getElementById('difficultyFilter');
+  if (!bar) return;
+
+  const initial = new URLSearchParams(window.location.search).get('difficulty') || '';
+  for (const chip of bar.querySelectorAll('.chip')) {
+    chip.setAttribute('aria-pressed', String(chip.dataset.difficulty === initial));
+  }
+  if (initial) renderFilteredTopicGrid(initial);
+
+  bar.addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    const difficulty = chip.dataset.difficulty;
+
+    for (const c of bar.querySelectorAll('.chip')) {
+      c.setAttribute('aria-pressed', String(c === chip));
+    }
+    renderFilteredTopicGrid(difficulty);
+
+    const params = new URLSearchParams(window.location.search);
+    if (difficulty) params.set('difficulty', difficulty);
+    else params.delete('difficulty');
+    const query = params.toString();
+    history.replaceState(null, '', query ? `?${query}` : window.location.pathname);
+  });
+}
+
 async function renderTopicGrid() {
   const grid = document.getElementById('topicGrid');
   if (!grid) return;
@@ -110,31 +174,17 @@ async function renderTopicGrid() {
     const progressMap = {};
     for (const r of (progressList ?? [])) progressMap[r.topic_id] = r;
 
+    homeTopics = topics;
+    homeProgressMap = progressMap;
+
     // Update dynamic stats bar
     const statTopics  = document.getElementById('statTopics');
     const statQuizzes = document.getElementById('statQuizzes');
     if (statTopics)  statTopics.textContent  = topics.length;
     if (statQuizzes) statQuizzes.textContent = topics.length;
 
-    grid.innerHTML = topics.map(t => {
-      const prog = progressMap[t.id];
-      const progressBadge = prog
-        ? `<div class="card-progress" aria-label="Quiz score: ${prog.score} of ${prog.total}">
-             ${prog.score}/${prog.total}${prog.score === prog.total ? ' <span class="progress-star" aria-hidden="true">★</span>' : ''}
-           </div>`
-        : '';
-      return `
-        <a href="/topic/${t.id}" class="card card-link${prog ? ' card-completed' : ''}" aria-label="${escHtml(t.title)}">
-          ${progressBadge}
-          <div class="card-icon" aria-hidden="true">${t.icon}</div>
-          <h3 class="card-title">${escHtml(t.title)}</h3>
-          <p class="card-desc">${escHtml(t.shortDesc)}</p>
-          <div class="card-footer">
-            <span class="badge badge-beginner">${escHtml(t.difficulty)}</span>
-            <span class="btn btn-sm" aria-hidden="true">Explore →</span>
-          </div>
-        </a>`;
-    }).join('');
+    const activeDifficulty = new URLSearchParams(window.location.search).get('difficulty') || '';
+    renderFilteredTopicGrid(activeDifficulty);
   } catch (err) {
     // The grid is server-rendered, so only show an error if it's actually empty
     // (never wipe the server-rendered cards when the progress fetch fails).
@@ -2877,7 +2927,7 @@ async function loadProfileProgress() {
               <h3 class="card-title">${escHtml(t.title)}</h3>
               <p class="card-desc">${escHtml(t.shortDesc)}</p>
               <div class="card-footer">
-                <span class="badge badge-beginner">${escHtml(t.difficulty)}</span>
+                <span class="badge badge-${t.difficulty.toLowerCase()}">${escHtml(t.difficulty)}</span>
                 <span class="btn btn-sm" aria-hidden="true">Explore →</span>
               </div>
             </a>`;
@@ -3216,6 +3266,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   if (isHomePage()) {
     initTypewriter();
+    initDifficultyFilter();
     renderTopicGrid();
   } else if (window.location.pathname.startsWith('/topic/')) {
     renderTopicPage();

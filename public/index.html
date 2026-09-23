@@ -130,6 +130,12 @@
     <section id="topics" aria-label="Topics">
       <div class="container">
         <h2 class="section-heading"><span>//</span> Core Topics</h2>
+        <div class="difficulty-filter" id="difficultyFilter" role="group" aria-label="Filter topics by difficulty">
+          <button type="button" class="chip" data-difficulty="" aria-pressed="true">All</button>
+          <button type="button" class="chip" data-difficulty="beginner" aria-pressed="false">Beginner</button>
+          <button type="button" class="chip" data-difficulty="intermediate" aria-pressed="false">Intermediate</button>
+          <button type="button" class="chip" data-difficulty="advanced" aria-pressed="false">Advanced</button>
+        </div>
         <div class="topic-grid" id="topicGrid">
           <!-- Populated by main.js -->
         </div>

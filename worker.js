@@ -1216,7 +1216,7 @@ function topicCard(t) {
           <h3 class="card-title">${title}</h3>
           <p class="card-desc">${escapeHtml(t.shortDesc)}</p>
           <div class="card-footer">
-            <span class="badge badge-beginner">${escapeHtml(t.difficulty)}</span>
+            <span class="badge badge-${t.difficulty.toLowerCase()}">${escapeHtml(t.difficulty)}</span>
             <span class="btn btn-sm" aria-hidden="true">Explore →</span>
           </div>
         </a>`;

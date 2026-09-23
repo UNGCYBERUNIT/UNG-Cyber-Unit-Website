@@ -857,6 +857,18 @@ describe('topicCard', () => {
     assert.match(html, /a &quot;b&quot;/);
     assert.doesNotMatch(html, /Passwords & Auth/); // raw & should not survive
   });
+
+  test('should render the badge class matching a non-Beginner difficulty', () => {
+    // Regression: the grid card used to hardcode badge-beginner regardless
+    // of the topic's actual difficulty.
+    const intermediate = topicCard({ id: '04', title: 'X', icon: '🛡️', shortDesc: 'Y', difficulty: 'Intermediate' });
+    assert.match(intermediate, /class="badge badge-intermediate"/);
+    assert.match(intermediate, />Intermediate</);
+
+    const advanced = topicCard({ id: '05', title: 'X', icon: '🛡️', shortDesc: 'Y', difficulty: 'Advanced' });
+    assert.match(advanced, /class="badge badge-advanced"/);
+    assert.match(advanced, />Advanced</);
+  });
 });
 
 describe('pathwayHtml', () => {
