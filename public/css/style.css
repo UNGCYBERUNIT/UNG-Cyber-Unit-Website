@@ -1823,15 +1823,31 @@ footer {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 6px;
-  min-width: 160px;
+  min-width: 200px;
   z-index: 200;
   overflow: hidden;
   box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  padding: 0.4rem 0;
+}
+/* Small uppercase heading above each content-type group (Learn, Community,
+   Quizzes, Staff) — first one in the menu gets no extra top gap. */
+.nav-dropdown-label {
+  padding: 0.5rem 1rem 0.3rem;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+.nav-dropdown-divider {
+  height: 1px;
+  margin: 0.4rem 0;
+  background: var(--border);
 }
 .nav-dropdown-item {
   display: flex;
   align-items: center;
-  padding: 0.65rem 1rem;
+  padding: 0.55rem 1rem;
   font-family: 'Share Tech Mono', monospace;
   font-size: 0.82rem;
   color: var(--text);

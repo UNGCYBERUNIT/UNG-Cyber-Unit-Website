@@ -712,24 +712,43 @@ function updateAuthNav() {
   const navItem = document.getElementById('authNavItem');
   if (!navItem) return;
 
-  // Single ☰ menu: Announcements first (with an unread dot), then Beginner
-  // Pathway/Join Room/Leaderboard/Profile for everyone, plus role-gated
-  // panels. Server routes still enforce roles; this gating only controls
-  // visibility. Guest login lives in the Sign In modal instead.
+  // Single ☰ menu, sectioned by content type so it stays scannable as it
+  // grows — each group gets a small uppercase label; a divider separates
+  // groups from each other and from the trailing role-gated staff group
+  // (only rendered when it has at least one item) and Contact Us. Server
+  // routes still enforce roles; this gating only controls visibility. Guest
+  // login lives in the Sign In modal instead.
   const showUnreadDot = currentUser?.hasUnreadAnnouncements;
-  const menuItems = [
-    `<a href="/announcements" class="nav-dropdown-item">Announcements${showUnreadDot ? ' <span class="nav-badge-dot" aria-label="Unread announcements"></span>' : ''}</a>`,
-    `<a href="/events" class="nav-dropdown-item">Events</a>`,
-    `<a href="/start" class="nav-dropdown-item">Beginner Pathway</a>`,
-    `<a href="/quiz" class="nav-dropdown-item">Join Room</a>`,
-    `<a href="/leaderboard" class="nav-dropdown-item">Leaderboard</a>`,
-    `<a href="/members" class="nav-dropdown-item">Member Directory</a>`,
-    `<a href="/resources" class="nav-dropdown-item">Resources</a>`,
-    isStudentPlus() ? `<a href="/student-hub" class="nav-dropdown-item">Student Hub</a>` : '',
-    isInstructor() ? `<a href="/instructor" class="nav-dropdown-item">Instructor Panel</a>` : '',
-    currentUser?.role === 'admin' ? `<a href="/admin" class="nav-dropdown-item nav-dropdown-item--danger">Admin Panel</a>` : '',
+
+  const section = (label, items) => {
+    const rendered = items.filter(Boolean).join('');
+    if (!rendered) return '';
+    return `<div class="nav-dropdown-label">${label}</div>${rendered}`;
+  };
+
+  const groups = [
+    section('Learn', [
+      `<a href="/start" class="nav-dropdown-item">Beginner Pathway</a>`,
+      `<a href="/resources" class="nav-dropdown-item">Resources</a>`,
+    ]),
+    section('Community', [
+      `<a href="/announcements" class="nav-dropdown-item">Announcements${showUnreadDot ? ' <span class="nav-badge-dot" aria-label="Unread announcements"></span>' : ''}</a>`,
+      `<a href="/events" class="nav-dropdown-item">Events</a>`,
+      `<a href="/members" class="nav-dropdown-item">Member Directory</a>`,
+    ]),
+    section('Quizzes', [
+      `<a href="/quiz" class="nav-dropdown-item">Join Room</a>`,
+      `<a href="/leaderboard" class="nav-dropdown-item">Leaderboard</a>`,
+    ]),
+    section('Staff', [
+      isStudentPlus() ? `<a href="/student-hub" class="nav-dropdown-item">Student Hub</a>` : '',
+      isInstructor() ? `<a href="/instructor" class="nav-dropdown-item">Instructor Panel</a>` : '',
+      currentUser?.role === 'admin' ? `<a href="/admin" class="nav-dropdown-item nav-dropdown-item--danger">Admin Panel</a>` : '',
+    ]),
     `<a href="/contact" class="nav-dropdown-item">Contact Us</a>`,
-  ].filter(Boolean).join('');
+  ].filter(Boolean);
+
+  const menuItems = groups.join('<div class="nav-dropdown-divider" role="separator"></div>');
 
   const menuBtn = `<div class="nav-dropdown" id="navMenuDropdown">
       <button class="nav-dropdown-toggle" id="navMenuBtn" aria-label="Menu${showUnreadDot ? ' (unread announcements)' : ''}" aria-expanded="false">☰${showUnreadDot ? '<span class="nav-badge-dot" aria-hidden="true"></span>' : ''}</button>
