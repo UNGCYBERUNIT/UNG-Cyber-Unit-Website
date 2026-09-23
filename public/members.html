@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex">
+  <title>CyberUnit @ UNG — Member Directory</title>
+  <link rel="icon" href="/favicon.ico" type="image/x-icon">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+  <!-- ─── Navbar ──────────────────────────────────────────── -->
+  <nav class="navbar" role="navigation" aria-label="Main navigation">
+    <div class="container">
+      <a href="/" class="navbar-logo"><img src="/images/CyberUnitLogo_Transparent.png" alt="CyberUnit @ UNG" class="navbar-logo-img"><span class="navbar-logo-text">[ CyberUnit @ UNG ]</span></a>
+      <button class="hamburger" id="hamburger" aria-label="Toggle navigation" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
+      <ul class="navbar-links" id="navLinks">
+        <li><a href="/">Home</a></li>
+        <li><a href="/about">About</a></li>
+        <li><a href="https://discord.gg/BjU632E7sV" target="_blank" rel="noopener noreferrer" class="btn btn-sm navbar-discord-btn">Discord</a></li>
+        <li id="authNavItem"></li>
+      </ul>
+    </div>
+  </nav>
+
+  <main class="page-body">
+    <div class="container" style="max-width: 900px; padding: 2rem 1rem;">
+
+      <header style="margin-bottom: 2rem;">
+        <h1 style="font-family: 'Share Tech Mono', monospace; color: var(--accent); font-size: 1.6rem; margin: 0 0 0.25rem;">
+          // Member Directory
+        </h1>
+        <p style="color: var(--text-muted); font-family: 'Share Tech Mono', monospace; font-size: 0.85rem; margin: 0;">
+          Opted-in members, browsable by role
+        </p>
+      </header>
+
+      <!-- Shown when not signed in -->
+      <div id="loginGate" class="login-gate" hidden>
+        <p style="font-size:2rem;margin-bottom:0.75rem;">🔒</p>
+        <p style="margin-bottom:1.25rem;">Sign in to browse the Member Directory.</p>
+        <button class="btn btn-primary" id="loginGateBtn">Sign In</button>
+      </div>
+
+      <!-- Shown when signed in -->
+      <div id="membersContent" hidden>
+        <div class="difficulty-filter" id="memberRoleFilter" role="group" aria-label="Filter members by role">
+          <button type="button" class="chip" data-role="" aria-pressed="true">All</button>
+          <button type="button" class="chip" data-role="member" aria-pressed="false">Member</button>
+          <button type="button" class="chip" data-role="student" aria-pressed="false">Student</button>
+          <button type="button" class="chip" data-role="instructor" aria-pressed="false">Instructor</button>
+          <button type="button" class="chip" data-role="admin" aria-pressed="false">Admin</button>
+        </div>
+
+        <div id="membersGrid" class="topic-grid">
+          <p style="color: var(--text-muted); font-family: 'Share Tech Mono', monospace;">Loading...</p>
+        </div>
+
+        <div id="membersPagination" style="display:flex; gap:1rem; align-items:center; justify-content:center; margin-top:2rem;"></div>
+      </div>
+
+    </div>
+  </main>
+
+  <script type="module" src="/js/main.js"></script>
+</body>
+</html>

@@ -66,14 +66,19 @@ calls, imported by both `worker.js` (server render, for crawlers/no-JS) and
 more hand-syncing two copies. (This split is *why* `public/js/main.js`'s `<script>` tag
 needs `type="module"`: see the `<head>` of any `public/*.html` page.)
 
-**Public/private profiles:** `users.is_public` (default `0`, opt-in) gates `/u/:username`.
-`GET /api/user/:username` is the only place that subset is ever returned — it must stay a
-strict field whitelist (username, avatar, member-since, pathway badges, module/room rank,
-isStudent) and must **never** include quiz-room history, per-topic quiz progress, role, id,
-the verified email address itself, or any other field from `/api/profile`. Unknown username
-or a guest account → `404`; a real but private account → `403` (no data). The leaderboard
-links every username to `/u/:username` regardless of visibility — the private/404 state is
-resolved when that page is opened, not by hiding the link.
+**Public/private profiles:** `users.is_public` (default `0`, opt-in) gates `/u/:username` **and**
+inclusion in the `/members` directory (`GET /api/members`) — as of `docs/plan-member-directory.md`,
+toggling it on means "viewable via your link and browsable in the directory," not just the
+former. `GET /api/user/:username` is the strict field whitelist (username, avatar,
+member-since, pathway badges, module/room rank, isStudent) and must **never** include
+quiz-room history, per-topic quiz progress, role, id, the verified email address itself, or
+any other field from `/api/profile`. `GET /api/members` reuses this exact whitelist for every
+row — never a parallel "directory summary" shape, and it filters to `is_public = 1` at the
+SQL level (never fetch-then-filter client-side). Unknown username or a guest account → `404`;
+a real but private account → `403` (no data). The leaderboard links every username to
+`/u/:username` regardless of visibility — the private/404 state is resolved when that page is
+opened, not by hiding the link. `/members` is different: it's a browsable list gated to
+`is_public = 1` users only, so it never links to a private profile in the first place.
 
 **Discord account pairing** (see `docs/plan-discord-pairing.md`): `users.discord_id` /
 `discord_username` / `discord_linked_at`, linked via a real Discord OAuth (`identify` scope)

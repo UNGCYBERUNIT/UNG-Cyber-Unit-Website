@@ -2604,6 +2604,59 @@ export default {
       });
     }
 
+    // GET /api/members?role=&page=&limit= — browsable directory of opted-in
+    // public profiles. Different in kind from /api/user/:username (which
+    // looks up one already-known username): this is the first endpoint that
+    // enumerates every is_public user, so it's gated the same way every other
+    // member-facing list is (requireRole 'member', excludes guests) and the
+    // query filters to is_public = 1 at the SQL level — never fetched then
+    // filtered client-side. Reuses /api/user/:username's exact field
+    // whitelist (username, avatar, created_at, badges, rank, roomRank,
+    // isStudent) for every row — no parallel "directory summary" shape.
+    if (path === '/api/members' && request.method === 'GET') {
+      if (!env.JWT_SECRET || !env.DB) return jsonResponse({ error: 'Server not configured' }, 503);
+      const session = await requireRole(request, env, 'member');
+      if (session instanceof Response) return session;
+
+      const VALID_ROLES = ['member', 'student', 'instructor', 'admin'];
+      const roleFilter = url.searchParams.get('role');
+      if (roleFilter && !VALID_ROLES.includes(roleFilter)) {
+        return jsonResponse({ error: 'Invalid role filter' }, 400);
+      }
+      const limit = Math.min(Math.max(parseInt(url.searchParams.get('limit'), 10) || 20, 1), 50);
+      const page = Math.max(parseInt(url.searchParams.get('page'), 10) || 1, 1);
+      const offset = (page - 1) * limit;
+
+      const roleClause = roleFilter ? 'AND role = ?' : '';
+      const roleBind = roleFilter ? [roleFilter] : [];
+
+      const { results: rows } = await env.DB.prepare(
+        `SELECT id, username, avatar, created_at, role FROM users WHERE is_public = 1 ${roleClause} ORDER BY username ASC LIMIT ? OFFSET ?`
+      ).bind(...roleBind, limit, offset).all();
+
+      const totalRow = await env.DB.prepare(
+        `SELECT COUNT(*) AS total FROM users WHERE is_public = 1 ${roleClause}`
+      ).bind(...roleBind).first();
+
+      const members = await Promise.all((rows ?? []).map(async u => {
+        const { results: prog } = await env.DB.prepare(
+          'SELECT topic_id FROM quiz_results WHERE user_id = ?'
+        ).bind(u.id).all();
+        const doneTopics = new Set((prog ?? []).map(r => String(r.topic_id)));
+        return {
+          username: u.username,
+          avatar: u.avatar ?? null,
+          created_at: u.created_at,
+          badges: pathwayBadges(doneTopics),
+          rank: await leaderboardRank(env, 'quiz_results', u.id, u.username),
+          roomRank: await leaderboardRank(env, 'quiz_room_attempts', u.id, u.username),
+          isStudent: (ROLE_RANK[u.role] ?? 0) >= ROLE_RANK.student,
+        };
+      }));
+
+      return jsonResponse({ members, total: totalRow?.total ?? 0, page, limit });
+    }
+
     // GET /api/leaderboard?mode=modules|rooms — top performers. "modules" ranks
     // by topic-quiz points, "rooms" by quiz-room points. Guests are excluded.
     if (path === '/api/leaderboard' && request.method === 'GET') {
@@ -3731,6 +3784,7 @@ export default {
       '/profile': '/profile',
       '/start': '/start',
       '/leaderboard': '/leaderboard',
+      '/members': '/members',
       '/announcements': '/announcements',
       '/events': '/events',
       '/contact': '/contact',

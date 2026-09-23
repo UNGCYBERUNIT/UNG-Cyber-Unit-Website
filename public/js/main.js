@@ -723,6 +723,7 @@ function updateAuthNav() {
     `<a href="/start" class="nav-dropdown-item">Beginner Pathway</a>`,
     `<a href="/quiz" class="nav-dropdown-item">Join Room</a>`,
     `<a href="/leaderboard" class="nav-dropdown-item">Leaderboard</a>`,
+    `<a href="/members" class="nav-dropdown-item">Member Directory</a>`,
     `<a href="/resources" class="nav-dropdown-item">Resources</a>`,
     isStudentPlus() ? `<a href="/student-hub" class="nav-dropdown-item">Student Hub</a>` : '',
     isInstructor() ? `<a href="/instructor" class="nav-dropdown-item">Instructor Panel</a>` : '',
@@ -2096,6 +2097,76 @@ async function initLeaderboardPage() {
   await loadLeaderboard(initialMode);
 }
 
+// ─── Member Directory ───────────────────────────────────────────────────────
+// Browsable list of opted-in (is_public) profiles. Member-gated (unlike
+// Announcements/Events) — same login-gate pattern as /leaderboard.
+
+async function initMembersPage() {
+  const gate = document.getElementById('loginGate');
+  const content = document.getElementById('membersContent');
+  if (!currentUser || currentUser.role === 'guest') {
+    if (gate) gate.hidden = false;
+    document.getElementById('loginGateBtn')?.addEventListener('click', () => openAuthModal('login'));
+    return;
+  }
+  if (content) content.hidden = false;
+
+  const LIMIT = 20;
+  let role = '';
+  let page = 1;
+
+  async function loadMembers() {
+    const grid = document.getElementById('membersGrid');
+    const pagination = document.getElementById('membersPagination');
+    if (!grid) return;
+    grid.innerHTML = `<p style="color:var(--text-muted);font-family:'Share Tech Mono',monospace;">Loading...</p>`;
+    try {
+      const params = new URLSearchParams({ page: String(page), limit: String(LIMIT) });
+      if (role) params.set('role', role);
+      const res = await fetch(`/api/members?${params}`);
+      if (!res.ok) throw new Error();
+      const { members, total } = await res.json();
+
+      grid.innerHTML = members.length
+        ? members.map(m => `
+          <a href="/u/${encodeURIComponent(m.username)}" class="card card-link" aria-label="${escHtml(m.username)}">
+            <img class="lb-avatar" src="${escHtml(m.avatar || DEFAULT_AVATAR)}" alt="" style="width:48px;height:48px;border-radius:50%;margin-bottom:0.5rem;">
+            <h3 class="card-title">${escHtml(m.username)}${m.isStudent ? ' <span class="badge badge-beginner">Student</span>' : ''}</h3>
+            <p class="card-desc">Member since ${new Date(m.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long' })}</p>
+            <div class="card-footer">
+              <span class="announcement-meta">${m.rank ? `Module Rank #${m.rank}` : 'Unranked (modules)'}${m.roomRank ? ` · Room Rank #${m.roomRank}` : ''}</span>
+            </div>
+          </a>`).join('')
+        : `<p style="color:var(--text-muted);font-family:'Share Tech Mono',monospace;">No opted-in members match this filter.</p>`;
+
+      if (pagination) {
+        const totalPages = Math.max(Math.ceil(total / LIMIT), 1);
+        pagination.innerHTML = totalPages > 1 ? `
+          <button type="button" class="btn btn-sm" id="membersPrevBtn" ${page <= 1 ? 'disabled' : ''}>← Prev</button>
+          <span style="font-family:'Share Tech Mono',monospace;color:var(--text-muted);font-size:0.85rem;">Page ${page} of ${totalPages}</span>
+          <button type="button" class="btn btn-sm" id="membersNextBtn" ${page >= totalPages ? 'disabled' : ''}>Next →</button>
+        ` : '';
+        document.getElementById('membersPrevBtn')?.addEventListener('click', () => { page--; loadMembers(); });
+        document.getElementById('membersNextBtn')?.addEventListener('click', () => { page++; loadMembers(); });
+      }
+    } catch {
+      grid.innerHTML = `<p style="color:var(--danger);font-family:'Share Tech Mono',monospace;">Failed to load the directory.</p>`;
+    }
+  }
+
+  const filterBar = document.getElementById('memberRoleFilter');
+  filterBar?.addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    for (const c of filterBar.querySelectorAll('.chip')) c.setAttribute('aria-pressed', String(c === chip));
+    role = chip.dataset.role;
+    page = 1;
+    loadMembers();
+  });
+
+  await loadMembers();
+}
+
 // ─── Announcements ──────────────────────────────────────────────────────────
 
 async function initAnnouncementsPage() {
@@ -2781,7 +2852,7 @@ async function loadProfileAccount() {
           <span class="visibility-toggle-copy">
             <strong>Public profile</strong>
             <span id="visibilityStatusText">${profile.isPublic
-              ? `Other members can view your profile at <code>/u/${escHtml(profile.username)}</code>`
+              ? `Viewable at <code>/u/${escHtml(profile.username)}</code> and listed in the <a href="/members">Member Directory</a>`
               : 'Only you can see your profile'}</span>
           </span>
         </div>
@@ -2945,7 +3016,7 @@ function wireVisibilityToggle(username) {
       const data = await res.json();
       if (statusText) {
         statusText.innerHTML = data.isPublic
-          ? `Other members can view your profile at <code>/u/${escHtml(username)}</code>`
+          ? `Viewable at <code>/u/${escHtml(username)}</code> and listed in the <a href="/members">Member Directory</a>`
           : 'Only you can see your profile';
       }
     } catch {
@@ -3526,6 +3597,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     initProfilePage();
   } else if (window.location.pathname === '/leaderboard') {
     initLeaderboardPage();
+  } else if (window.location.pathname === '/members') {
+    initMembersPage();
   } else if (window.location.pathname === '/announcements') {
     initAnnouncementsPage();
   } else if (window.location.pathname === '/events') {

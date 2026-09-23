@@ -49,7 +49,7 @@ also carries a mentor-voice hook and a plain-English key takeaway.
 - **Save Progress (guest → real account)** — a guest sees a **"Save Progress"** button in the navbar instead of a username link. It opens the register form in an "upgrade" mode that posts to `/api/auth/upgrade`, which converts the *same* underlying row in place (same id, new username/password, role flipped to `member`) rather than creating a separate account — so quiz progress and streak carry over automatically with no migration step.
 - **Roles** — `guest` < `member` < `student` < `instructor` < `admin`. `student` is admin-assigned only (via the Admin Panel's role dropdown, `PATCH /api/admin/users/:id`) — there's no self-service path to it. It gates `/student-hub` and Student-visibility Quiz Rooms.
 - **Email verification** is a general-purpose, role-decoupled identity/recovery marker — any signed-in non-guest member can confirm any email address on their account. It does **not** grant the `student` role by itself; it also backs the forgot-password/forgot-username flows.
-- **Public/private profiles** — `/u/:username` shows a member's public profile if they've opted in via the toggle on `/profile`. Admins can open any profile from the Admin Panel (click a username) regardless of that toggle; the returned data is always the same strict whitelisted field set either way.
+- **Public/private profiles** — `/u/:username` shows a member's public profile if they've opted in via the toggle on `/profile`; the same toggle also lists them in the `/members` directory. Admins can open any profile from the Admin Panel (click a username) regardless of that toggle; the returned data is always the same strict whitelisted field set either way.
 
 ---
 
@@ -148,6 +148,7 @@ cybersec-basics/
 | `/profile` | Logged-in user's profile — account info + rank, pathway badges, topic progress, Quiz Room history (click your username in the navbar). Includes a public/private visibility toggle and the guest "Save Progress" upgrade flow. |
 | `/leaderboard` | Top Performers leaderboard (member-facing; also a section on the profile). Usernames link to `/u/:username`. Guests are excluded from ranking. |
 | `/u/:username` | Public view of a member's profile (username, avatar, member-since, pathway badges, module/room rank) — only if they've opted in via the profile toggle, or if the viewer is an admin (who can bypass the privacy gate from the Admin Panel). Otherwise shows a "private" state. `noindex`, not in the sitemap. |
+| `/members` | Member Directory — browsable list of opted-in (`is_public`) profiles, filterable by role, paginated. Member-gated (guests excluded). `noindex`, not in the sitemap. |
 | `/announcements` | Unit newsletter — public, viewable signed-out, as a guest, or as any member role. Sortable (Newest/Oldest/A-Z/Z-A cycle button) and searchable by title/date. Admins get inline create/edit/delete. |
 | `/events` | Club events — meetings, CTF competitions, guest talks. Public, same visibility as Announcements. Split into Upcoming/Past sections by date. Admins get inline create/edit/delete. |
 | `/contact` | Contact Us — public feedback form (rate-limited, no login required) plus direct unit contact info |
@@ -175,6 +176,7 @@ cybersec-basics/
 | `/api/profile/avatar` (POST/DELETE) | Logged-in user — upload/remove their own avatar image (magic-byte validated, size-capped) |
 | `/api/profile/visibility` (POST) | Logged-in user (non-guest) — toggle whether `/u/:username` is viewable by others |
 | `/api/user/:username` | Public subset of a profile (username, avatar, member-since, badges, ranks) if that user has opted in, or if the requester is an admin; `403` if private (non-admin viewer), `404` if unknown/guest |
+| `/api/members?role=&page=&limit=` | Signed-in non-guest member — paginated, role-filterable list of `is_public` users, same field whitelist as `/api/user/:username` per row |
 | `/api/discord/link/start` (GET) | Logged-in user (non-guest) — redirects to Discord's OAuth consent screen to begin linking a Discord account (see `docs/plan-discord-pairing.md`) |
 | `/api/discord/callback` (GET) | Discord's OAuth redirect target — validates a signed, short-lived `state` param, exchanges the code, links the calling session's account, then redirects to `/profile?discord=linked\|error\|duplicate` |
 | `/api/discord/unlink` (POST) | Logged-in user (non-guest) — clears the caller's own Discord link only |

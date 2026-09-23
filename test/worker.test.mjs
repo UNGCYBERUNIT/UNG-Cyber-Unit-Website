@@ -127,6 +127,36 @@ function mockPublicProfileDB(usersByUsername) {
   };
 }
 
+// A mock D1 for GET /api/members: the row-list and COUNT(*) queries both
+// filter `WHERE is_public = 1 [AND role = ?]` — dispatched by matching each
+// query's SQL, same style as mockPublicProfileDB. Records every call so a
+// test can assert the WHERE clause and bindings actually used.
+function mockMembersDB({ rows = [], total = rows.length } = {}) {
+  const calls = [];
+  return {
+    calls,
+    prepare(sql) {
+      return {
+        bind: (...bindings) => ({
+          all: async () => {
+            calls.push({ sql, bindings, op: 'all' });
+            if (/SELECT id, username, avatar, created_at, role FROM users WHERE is_public = 1/.test(sql)) {
+              return { results: rows };
+            }
+            return { results: [] }; // per-row quiz_results progress lookup -> no progress
+          },
+          first: async () => {
+            calls.push({ sql, bindings, op: 'first' });
+            if (/COUNT\(\*\) AS total FROM users WHERE is_public = 1/.test(sql)) return { total };
+            if (/WHERE user_id = \?/.test(sql)) return { points: 0, count: 0 }; // leaderboardRank -> unranked
+            return null;
+          },
+        }),
+      };
+    },
+  };
+}
+
 // A mock D1 for GET /api/auth/me's unread-announcements check: resolves the
 // per-user `last_seen_announcements` lookup and the `MAX(created_at)` over
 // announcements independently, so a test can set each side of the comparison.
@@ -1806,6 +1836,85 @@ describe('GET /api/user/:username', () => {
   });
 });
 
+describe('GET /api/members', () => {
+  const aliceRow = { id: 1, username: 'alice', avatar: null, created_at: 1000, role: 'member' };
+
+  test('should require a session', async () => {
+    const res = await worker.fetch(
+      new Request('https://example.com/api/members'),
+      { JWT_SECRET: SECRET, DB: mockMembersDB({ rows: [aliceRow] }) },
+    );
+    assert.equal(res.status, 401);
+  });
+
+  test('should reject a guest', async () => {
+    const cookie = await sessionCookieFor({ sub: 9, username: 'guest-abc', role: 'guest' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/members', { headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: mockMembersDB({ rows: [aliceRow] }) },
+    );
+    assert.equal(res.status, 403);
+  });
+
+  test('should query is_public = 1 and return only the same whitelist as /api/user/:username', async () => {
+    const db = mockMembersDB({ rows: [aliceRow] });
+    const cookie = await sessionCookieFor({ sub: 1, username: 'alice', role: 'member' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/members', { headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.members.length, 1);
+    const m = data.members[0];
+    assert.equal(m.username, 'alice');
+    assert.ok(Array.isArray(m.badges));
+    assert.equal(m.rank, null);
+    assert.equal(m.roomRank, null);
+    assert.ok(!('id' in m));
+    assert.ok(!('role' in m));
+    assert.ok(!('is_public' in m));
+    assert.ok(!('roomAttempts' in m));
+
+    // The query itself filters at the SQL level — never fetch-then-filter.
+    assert.ok(db.calls.some(c => /FROM users WHERE is_public = 1/.test(c.sql)));
+  });
+
+  test('should reject an invalid role filter', async () => {
+    const cookie = await sessionCookieFor({ sub: 1, username: 'alice', role: 'member' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/members?role=nonsense', { headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: mockMembersDB({ rows: [] }) },
+    );
+    assert.equal(res.status, 400);
+  });
+
+  test('should apply a valid role filter as a bound parameter, not string interpolation', async () => {
+    const db = mockMembersDB({ rows: [] });
+    const cookie = await sessionCookieFor({ sub: 1, username: 'alice', role: 'member' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/members?role=instructor', { headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 200);
+    const listCall = db.calls.find(c => c.op === 'all' && /AND role = \?/.test(c.sql));
+    assert.ok(listCall);
+    assert.ok(listCall.bindings.includes('instructor'));
+  });
+
+  test('should return total/page/limit for pagination', async () => {
+    const cookie = await sessionCookieFor({ sub: 1, username: 'alice', role: 'member' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/members?page=2&limit=5', { headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: mockMembersDB({ rows: [], total: 12 }) },
+    );
+    const data = await res.json();
+    assert.equal(data.total, 12);
+    assert.equal(data.page, 2);
+    assert.equal(data.limit, 5);
+  });
+});
+
 // ─── /api/announcements ─────────────────────────────────────────────────────────
 
 describe('GET /api/announcements', () => {
@@ -2179,7 +2288,7 @@ describe('GET /api/instructor/topic-completion', () => {
 // and topic pages shipping only a client-rendered "Loading topic..." shell).
 
 describe('Static/simple pages', () => {
-  const pages = ['/', '/start', '/about', '/resources', '/profile', '/admin', '/instructor', '/quiz', '/leaderboard', '/announcements', '/events'];
+  const pages = ['/', '/start', '/about', '/resources', '/profile', '/admin', '/instructor', '/quiz', '/leaderboard', '/members', '/announcements', '/events'];
 
   for (const path of pages) {
     test(`GET ${path} should render 200 HTML with no leftover template placeholders`, async () => {
