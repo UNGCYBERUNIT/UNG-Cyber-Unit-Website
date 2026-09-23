@@ -38,6 +38,7 @@ import worker, {
   topicCard,
   pathwayHtml,
   topicMetaTags,
+  computeMissRates,
 } from '../worker.js';
 
 // ─── Test fixtures ────────────────────────────────────────────────────────────
@@ -1010,6 +1011,56 @@ describe('pathwayBadges', () => {
       assert.ok(b.name && b.icon && b.stageTitle);
       assert.match(b.href, /^\/start#stage-\d+$/);
     }
+  });
+});
+
+// ─── computeMissRates (instructor room analytics) ────────────────────────────
+
+describe('computeMissRates', () => {
+  const questions = [{ id: 1, question: 'Q1' }, { id: 2, question: 'Q2' }];
+
+  test('should return 0% and zero counts for a question with no answers yet', () => {
+    const rates = computeMissRates(questions, []);
+    assert.deepEqual(rates.find(r => r.id === 1), { id: 1, question: 'Q1', answeredCount: 0, pendingCount: 0, missRate: 0 });
+  });
+
+  test('should exclude ungraded free-response answers from the rate, not count them as wrong', () => {
+    // All answers pending (is_correct === null) — miss rate must be 0, not
+    // NaN/Infinity from dividing by zero graded answers, and not 100% from
+    // treating "pending" as "wrong".
+    const answers = [
+      { question_id: 1, is_correct: null },
+      { question_id: 1, is_correct: null },
+    ];
+    const rates = computeMissRates(questions, answers);
+    const q1 = rates.find(r => r.id === 1);
+    assert.equal(q1.answeredCount, 2);
+    assert.equal(q1.pendingCount, 2);
+    assert.equal(q1.missRate, 0);
+  });
+
+  test('should compute the miss rate only over graded answers, mixed with pending', () => {
+    const answers = [
+      { question_id: 1, is_correct: 1 },
+      { question_id: 1, is_correct: 0 },
+      { question_id: 1, is_correct: 0 },
+      { question_id: 1, is_correct: null }, // pending — excluded from the rate
+    ];
+    const rates = computeMissRates(questions, answers);
+    const q1 = rates.find(r => r.id === 1);
+    assert.equal(q1.answeredCount, 4);
+    assert.equal(q1.pendingCount, 1);
+    assert.equal(q1.missRate, 2 / 3); // 2 wrong out of 3 graded
+  });
+
+  test('should keep each question independent', () => {
+    const answers = [
+      { question_id: 1, is_correct: 0 },
+      { question_id: 2, is_correct: 1 },
+    ];
+    const rates = computeMissRates(questions, answers);
+    assert.equal(rates.find(r => r.id === 1).missRate, 1);
+    assert.equal(rates.find(r => r.id === 2).missRate, 0);
   });
 });
 
@@ -2032,6 +2083,93 @@ describe('DELETE /api/events/:id', () => {
       { JWT_SECRET: SECRET, DB: db },
     );
     assert.equal(res.status, 404);
+  });
+});
+
+// A mock DB for the instructor room-analytics endpoint: resolves the room
+// lookup, question list, and answer list from fixed fixtures, dispatched by
+// matching each query's SQL (same dispatch style as mockPublicProfileDB).
+function mockRoomAnalyticsDB({ room, questions = [], answers = [] }) {
+  return {
+    prepare(sql) {
+      return {
+        bind: (...bindings) => ({
+          first: async () => (/FROM quiz_rooms WHERE code = \?/.test(sql) ? room : null),
+          all: async () => {
+            if (/FROM quiz_room_questions/.test(sql)) return { results: questions };
+            if (/FROM quiz_room_answers/.test(sql)) return { results: answers };
+            return { results: [] };
+          },
+        }),
+      };
+    },
+  };
+}
+
+describe('GET /api/rooms/:code/analytics', () => {
+  const room = { id: 1, code: 'ABCD-2345', title: 'Room', created_by: 1 };
+  const questions = [{ id: 10, sort_order: 0, type: 'multiple_choice', question: 'Q1' }];
+  const answers = [{ question_id: 10, is_correct: 0 }, { question_id: 10, is_correct: 1 }];
+
+  test('should 404 for an unknown room code', async () => {
+    const cookie = await sessionCookieFor({ sub: 1, username: 'inst', role: 'instructor' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/rooms/ZZZZ-9999/analytics', { headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: mockRoomAnalyticsDB({ room: null }) },
+    );
+    assert.equal(res.status, 404);
+  });
+
+  test('should 403 for an instructor who does not own the room', async () => {
+    const cookie = await sessionCookieFor({ sub: 99, username: 'other-inst', role: 'instructor' });
+    const res = await worker.fetch(
+      new Request(`https://example.com/api/rooms/${room.code}/analytics`, { headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: mockRoomAnalyticsDB({ room, questions, answers }) },
+    );
+    assert.equal(res.status, 403);
+  });
+
+  test('should return miss-rate data for the owning instructor', async () => {
+    const cookie = await sessionCookieFor({ sub: 1, username: 'inst', role: 'instructor' });
+    const res = await worker.fetch(
+      new Request(`https://example.com/api/rooms/${room.code}/analytics`, { headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: mockRoomAnalyticsDB({ room, questions, answers }) },
+    );
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.room.code, room.code);
+    assert.equal(data.questions[0].missRate, 0.5);
+  });
+
+  test('should let an admin view any room\'s analytics (no ownership check)', async () => {
+    const cookie = await sessionCookieFor({ sub: 99, username: 'admin1', role: 'admin' });
+    const res = await worker.fetch(
+      new Request(`https://example.com/api/rooms/${room.code}/analytics`, { headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: mockRoomAnalyticsDB({ room, questions, answers }) },
+    );
+    assert.equal(res.status, 200);
+  });
+});
+
+describe('GET /api/instructor/topic-completion', () => {
+  test('should reject a member (instructor-only)', async () => {
+    const cookie = await sessionCookieFor({ sub: 1, username: 'alice', role: 'member' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/instructor/topic-completion', { headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: mockDB() },
+    );
+    assert.equal(res.status, 403);
+  });
+
+  test('should return aggregate results for an instructor', async () => {
+    const cookie = await sessionCookieFor({ sub: 1, username: 'inst', role: 'instructor' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/instructor/topic-completion', { headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: mockDB() },
+    );
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.ok(Array.isArray(data.results));
   });
 });
 

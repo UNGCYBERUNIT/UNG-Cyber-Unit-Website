@@ -960,6 +960,28 @@ function pathwayBadges(doneTopicIds) {
   }));
 }
 
+// Per-question miss-rate for a Quiz Room's instructor analytics view.
+// `answers` is every quiz_room_answers row across all attempts in the room
+// (just `question_id`/`is_correct`). Ungraded free-response answers
+// (`is_correct === null`) are pending — excluded from both the numerator and
+// denominator, since counting them as wrong (or dividing by a count that
+// includes them) would misrepresent the rate while a grading backlog exists.
+function computeMissRates(questions, answers) {
+  return questions.map(q => {
+    const forQuestion = answers.filter(a => a.question_id === q.id);
+    const pendingCount = forQuestion.filter(a => a.is_correct === null).length;
+    const graded = forQuestion.filter(a => a.is_correct !== null);
+    const incorrect = graded.filter(a => a.is_correct === 0).length;
+    return {
+      id: q.id,
+      question: q.question,
+      answeredCount: forQuestion.length,
+      pendingCount,
+      missRate: graded.length > 0 ? incorrect / graded.length : 0,
+    };
+  });
+}
+
 // A user's rank on a leaderboard, using the same ordering as /api/leaderboard
 // (points, then count, then username). `table` is a fixed internal name, never
 // user input. Returns null for guests or users with no points.
@@ -1792,6 +1814,7 @@ export {
   topicCard,
   pathwayHtml,
   topicMetaTags,
+  computeMissRates,
 };
 
 // ─── Worker Entry Point ───────────────────────────────────────────────────────
@@ -3377,6 +3400,36 @@ export default {
           });
         }
 
+        // GET /api/rooms/:code/analytics — instructor views per-question miss-rate
+        if (subpath === '/analytics' && request.method === 'GET') {
+          const session = await requireRole(request, env, 'instructor');
+          if (session instanceof Response) return session;
+
+          const room = await env.DB.prepare(
+            'SELECT id, code, title, created_by FROM quiz_rooms WHERE code = ?'
+          ).bind(code).first();
+          if (!room) return jsonResponse({ error: 'Room not found' }, 404);
+          if (room.created_by !== session.sub && session.role !== 'admin') {
+            return jsonResponse({ error: 'Forbidden' }, 403);
+          }
+
+          const { results: questions } = await env.DB.prepare(
+            'SELECT id, sort_order, type, question FROM quiz_room_questions WHERE room_id = ? ORDER BY sort_order'
+          ).bind(room.id).all();
+
+          const { results: answers } = await env.DB.prepare(`
+            SELECT a.question_id, a.is_correct
+            FROM quiz_room_answers a
+            JOIN quiz_room_attempts att ON att.id = a.attempt_id
+            WHERE att.room_id = ?
+          `).bind(room.id).all();
+
+          return jsonResponse({
+            room: { code: room.code, title: room.title },
+            questions: computeMissRates(questions ?? [], answers ?? []),
+          });
+        }
+
         // GET /api/rooms/:code — instructor views room detail
         if (subpath === '' && request.method === 'GET') {
           const session = await requireRole(request, env, 'instructor');
@@ -3469,6 +3522,25 @@ export default {
       }
 
       return jsonResponse({ error: 'Not found' }, 404);
+    }
+
+    // ── Instructor Analytics: site-wide topic-quiz completion ────────────────
+    // Aggregate-only, instructor+ (not member-visible — internal usage data).
+    // Site-wide rather than per-class: quiz_results has no "class" concept
+    // (just user_id/topic_id/score, global across the site), and there's no
+    // roster to scope it to. Don't "fix" this into a per-instructor filter
+    // without first modeling a real class/roster concept.
+    if (path === '/api/instructor/topic-completion' && request.method === 'GET') {
+      if (!env.JWT_SECRET || !env.DB) return jsonResponse({ error: 'Server not configured' }, 503);
+      const session = await requireRole(request, env, 'instructor');
+      if (session instanceof Response) return session;
+
+      const { results } = await env.DB.prepare(`
+        SELECT topic_id, COUNT(DISTINCT user_id) AS completions, AVG(score * 1.0 / total) AS avg_pct
+        FROM quiz_results
+        GROUP BY topic_id
+      `).all();
+      return jsonResponse({ results: results ?? [] });
     }
 
     // ── API: list all topics (summary only) ──────────────────────────────────

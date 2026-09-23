@@ -196,6 +196,8 @@ cybersec-basics/
 | `/api/rooms/:code/attempt` (POST) | Student — submit answers |
 | `/api/rooms/:code/my-attempt` | Student — check your own result |
 | `/api/rooms/:code/results` | Instructor — attempt roster for a room |
+| `/api/rooms/:code/analytics` | Instructor (room owner or admin) — per-question miss-rate, excluding ungraded free-response answers from the rate |
+| `/api/instructor/topic-completion` | Instructor — site-wide topic-quiz completion counts/avg. score, aggregated from `quiz_results` (no per-class scope — that concept doesn't exist yet) |
 | `/api/rooms/:code` (GET/PATCH/DELETE) | Instructor — view/edit/delete a room |
 | `/api/rooms/:code/attempts/:attemptId` (DELETE) | Instructor — reset a student's attempt |
 | `/api/rooms/:code/answers/:answerId` (PATCH) | Instructor — grade a free-response answer |

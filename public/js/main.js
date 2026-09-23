@@ -1514,6 +1514,42 @@ async function initInstructorPanel() {
   }
 
   await loadRooms();
+  await loadTopicCompletion();
+
+  // Site-wide (not per-class — quiz_results has no roster/class concept, see
+  // /api/instructor/topic-completion) topic-quiz completion, read-only.
+  async function loadTopicCompletion() {
+    const wrap = document.getElementById('topicCompletionWrap');
+    if (!wrap) return;
+    try {
+      const [completionRes, topicsRes] = await Promise.all([
+        fetch('/api/instructor/topic-completion'),
+        fetch('/api/topics'),
+      ]);
+      if (!completionRes.ok || !topicsRes.ok) throw new Error();
+      const { results } = await completionRes.json();
+      const topics = await topicsRes.json();
+      const byTopic = {};
+      for (const r of (results ?? [])) byTopic[r.topic_id] = r;
+
+      wrap.innerHTML = `
+        <table class="admin-table">
+          <thead><tr><th>Topic</th><th>Completions</th><th>Avg. Score</th></tr></thead>
+          <tbody>
+            ${topics.map(t => {
+              const r = byTopic[t.id];
+              return `<tr>
+                <td>${escHtml(t.title)}</td>
+                <td>${r ? r.completions : 0}</td>
+                <td>${r && r.avg_pct != null ? `${Math.round(r.avg_pct * 100)}%` : '—'}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>`;
+    } catch {
+      wrap.innerHTML = `<p style="color:var(--danger);font-family:'Share Tech Mono',monospace;">Failed to load topic completion.</p>`;
+    }
+  }
 
   async function handleCreateRoom(e) {
     e.preventDefault();
@@ -1700,6 +1736,7 @@ async function initInstructorPanel() {
     document.getElementById('resultsRoomTitle').textContent = `// ${title}`;
     document.getElementById('resultsRoomCode').textContent = code;
     document.getElementById('resultsSummary').innerHTML = `<p style="color:var(--text-muted);font-family:'Share Tech Mono',monospace;">Loading results...</p>`;
+    document.getElementById('resultsAnalytics').innerHTML = '';
     document.getElementById('resultsRoster').innerHTML = '';
 
     try {
@@ -1710,6 +1747,36 @@ async function initInstructorPanel() {
       renderResults(data);
     } catch {
       document.getElementById('resultsSummary').innerHTML = `<p style="color:var(--danger);font-family:'Share Tech Mono',monospace;">Failed to load results.</p>`;
+    }
+
+    loadAnalytics(code);
+  }
+
+  // Per-question miss-rate — fetched separately from /results so a failure
+  // here never blocks the roster from rendering.
+  async function loadAnalytics(code) {
+    const wrap = document.getElementById('resultsAnalytics');
+    if (!wrap) return;
+    try {
+      const res = await fetch(`/api/rooms/${code}/analytics`);
+      if (!res.ok) throw new Error();
+      const { questions } = await res.json();
+      if (!questions.length) { wrap.innerHTML = ''; return; }
+      wrap.innerHTML = `
+        <h3 class="instructor-section-heading" style="font-size:1rem;">// Question Miss-Rates</h3>
+        <table class="admin-table">
+          <thead><tr><th>Question</th><th>Miss Rate</th><th>Answered</th><th>Pending</th></tr></thead>
+          <tbody>
+            ${questions.map(q => `<tr>
+              <td>${escHtml(q.question)}</td>
+              <td>${Math.round(q.missRate * 100)}%</td>
+              <td>${q.answeredCount - q.pendingCount}</td>
+              <td>${q.pendingCount}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>`;
+    } catch {
+      wrap.innerHTML = '';
     }
   }
 
@@ -1917,6 +1984,7 @@ async function initInstructorPanel() {
 
   function showSection(section) {
     document.getElementById('createRoomSection').hidden = section !== 'rooms';
+    document.getElementById('topicCompletionSection').hidden = section !== 'rooms';
     document.getElementById('myRoomsSection').hidden = section !== 'rooms';
     document.getElementById('resultsSection').hidden = section !== 'results';
   }
