@@ -719,6 +719,7 @@ function updateAuthNav() {
   const showUnreadDot = currentUser?.hasUnreadAnnouncements;
   const menuItems = [
     `<a href="/announcements" class="nav-dropdown-item">Announcements${showUnreadDot ? ' <span class="nav-badge-dot" aria-label="Unread announcements"></span>' : ''}</a>`,
+    `<a href="/events" class="nav-dropdown-item">Events</a>`,
     `<a href="/start" class="nav-dropdown-item">Beginner Pathway</a>`,
     `<a href="/quiz" class="nav-dropdown-item">Join Room</a>`,
     `<a href="/leaderboard" class="nav-dropdown-item">Leaderboard</a>`,
@@ -2224,6 +2225,177 @@ async function initAnnouncementsPage() {
   await loadAnnouncements();
 }
 
+// ─── Club Events ────────────────────────────────────────────────────────────
+// Near-clone of initAnnouncementsPage() above — same public-read/admin-write
+// trust model — split into an Upcoming and Past section by comparing each
+// event's date to Date.now() at render time (no server-side split needed).
+
+async function initEventsPage() {
+  const content = document.getElementById('eventsContent');
+  if (content) content.hidden = false;
+
+  let allEvents = [];
+  let openForm = () => {}; // reassigned below when the caller is an admin
+
+  const formatDate = (ms) => new Date(ms).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+
+  function eventCardHtml(e, isAdmin) {
+    return `
+      <div class="card announcement-card">
+        <h3 class="card-title">${escHtml(e.title)}</h3>
+        <p class="card-desc">${escHtml(e.description)}</p>
+        <div class="card-footer announcement-footer">
+          <span class="announcement-meta">${formatDate(e.event_date)}${e.location ? ` — ${escHtml(e.location)}` : ''} · Posted by ${escHtml(e.username)}${e.updated_at ? ` (edited ${formatDate(e.updated_at)})` : ''}</span>
+          ${isAdmin ? `
+            <div class="announcement-actions">
+              <button type="button" class="btn btn-sm edit-event-btn" data-id="${e.id}">Edit</button>
+              <button type="button" class="btn btn-sm btn-danger delete-event-btn" data-id="${e.id}">Delete</button>
+            </div>` : ''}
+        </div>
+      </div>`;
+  }
+
+  function render() {
+    const upcomingWrap = document.getElementById('eventsUpcomingList');
+    const pastWrap = document.getElementById('eventsPastList');
+    const pastSection = document.getElementById('eventsPastSection');
+    if (!upcomingWrap || !pastWrap) return;
+    const isAdmin = currentUser?.role === 'admin';
+
+    const now = Date.now();
+    const upcoming = allEvents.filter(e => e.event_date >= now).sort((a, b) => a.event_date - b.event_date);
+    const past = allEvents.filter(e => e.event_date < now).sort((a, b) => b.event_date - a.event_date);
+
+    upcomingWrap.innerHTML = upcoming.length
+      ? upcoming.map(e => eventCardHtml(e, isAdmin)).join('')
+      : `<p style="color:var(--text-muted);font-family:'Share Tech Mono',monospace;">No upcoming events yet.</p>`;
+
+    if (pastSection) pastSection.hidden = past.length === 0;
+    pastWrap.innerHTML = past.map(e => eventCardHtml(e, isAdmin)).join('');
+
+    if (isAdmin) {
+      document.querySelectorAll('.edit-event-btn').forEach(btn => {
+        btn.addEventListener('click', () => openForm(allEvents.find(e => e.id === parseInt(btn.dataset.id, 10))));
+      });
+      document.querySelectorAll('.delete-event-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const id = parseInt(btn.dataset.id, 10);
+          const e = allEvents.find(x => x.id === id);
+          confirmDialog(`Delete "${e?.title ?? 'this event'}"? This cannot be undone.`, async () => {
+            const res = await fetch(`/api/events/${id}`, { method: 'DELETE' });
+            if (res.ok) {
+              allEvents = allEvents.filter(x => x.id !== id);
+              render();
+            } else {
+              alert('Failed to delete event.');
+            }
+          }, 'Delete');
+        });
+      });
+    }
+  }
+
+  async function loadEvents() {
+    try {
+      const res = await fetch('/api/events');
+      if (!res.ok) throw new Error();
+      const { results } = await res.json();
+      allEvents = results ?? [];
+      render();
+    } catch {
+      const wrap = document.getElementById('eventsUpcomingList');
+      if (wrap) wrap.innerHTML = `<p style="color:var(--danger);font-family:'Share Tech Mono',monospace;">Failed to load events.</p>`;
+    }
+  }
+
+  // Admin-only: inline create/edit form.
+  if (currentUser?.role === 'admin') {
+    const formWrap = document.getElementById('eventFormWrap');
+    if (formWrap) {
+      formWrap.hidden = false;
+      formWrap.innerHTML = `
+        <form id="eventForm" class="announcement-form">
+          <h2 class="instructor-section-heading" id="eventFormHeading">// New Event</h2>
+          <p class="form-error" id="eventFormError" hidden></p>
+          <div class="form-group">
+            <label for="eventTitle">Title</label>
+            <input type="text" id="eventTitle" maxlength="200" required>
+          </div>
+          <div class="form-group">
+            <label for="eventDate">Date</label>
+            <input type="date" id="eventDate" required>
+          </div>
+          <div class="form-group">
+            <label for="eventLocation">Location (optional)</label>
+            <input type="text" id="eventLocation" maxlength="200">
+          </div>
+          <div class="form-group">
+            <label for="eventDescription">Description</label>
+            <textarea id="eventDescription" rows="4" maxlength="5000" required></textarea>
+          </div>
+          <div class="announcement-form-actions">
+            <button type="submit" class="btn btn-primary" id="eventFormSubmit">Post Event</button>
+            <button type="button" class="btn btn-sm" id="eventFormCancel" hidden>Cancel</button>
+          </div>
+        </form>`;
+
+      let editingId = null;
+
+      openForm = (e) => {
+        editingId = e.id;
+        document.getElementById('eventFormHeading').textContent = '// Edit Event';
+        document.getElementById('eventTitle').value = e.title;
+        document.getElementById('eventDate').value = new Date(e.event_date).toISOString().slice(0, 10);
+        document.getElementById('eventLocation').value = e.location ?? '';
+        document.getElementById('eventDescription').value = e.description;
+        document.getElementById('eventFormSubmit').textContent = 'Save Changes';
+        document.getElementById('eventFormCancel').hidden = false;
+        formWrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      };
+
+      function resetForm() {
+        editingId = null;
+        document.getElementById('eventForm').reset();
+        document.getElementById('eventFormHeading').textContent = '// New Event';
+        document.getElementById('eventFormSubmit').textContent = 'Post Event';
+        document.getElementById('eventFormCancel').hidden = true;
+      }
+
+      document.getElementById('eventFormCancel').addEventListener('click', resetForm);
+
+      document.getElementById('eventForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const errEl = document.getElementById('eventFormError');
+        errEl.hidden = true;
+
+        const title = document.getElementById('eventTitle').value.trim();
+        const description = document.getElementById('eventDescription').value.trim();
+        const location = document.getElementById('eventLocation').value.trim();
+        const event_date = document.getElementById('eventDate').value;
+        if (!title || !description || !event_date) { errEl.textContent = 'Title, date, and description are required.'; errEl.hidden = false; return; }
+
+        const submitBtn = document.getElementById('eventFormSubmit');
+        submitBtn.disabled = true;
+        try {
+          const res = await fetch(editingId ? `/api/events/${editingId}` : '/api/events', {
+            method: editingId ? 'PATCH' : 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title, description, location, event_date }),
+          });
+          const data = await res.json();
+          if (!res.ok) { errEl.textContent = data.error || 'Failed to save event.'; errEl.hidden = false; return; }
+          resetForm();
+          await loadEvents();
+        } finally {
+          submitBtn.disabled = false;
+        }
+      });
+    }
+  }
+
+  await loadEvents();
+}
+
 // ─── Contact Us ─────────────────────────────────────────────────────────────
 // Backend stays /api/feedback (unchanged) — only the page-facing name/route
 // were renamed to "Contact Us".
@@ -3288,6 +3460,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     initLeaderboardPage();
   } else if (window.location.pathname === '/announcements') {
     initAnnouncementsPage();
+  } else if (window.location.pathname === '/events') {
+    initEventsPage();
   } else if (window.location.pathname.startsWith('/u/')) {
     initPublicProfilePage();
   } else if (window.location.pathname.startsWith('/quiz/')) {

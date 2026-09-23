@@ -148,7 +148,8 @@ cybersec-basics/
 | `/profile` | Logged-in user's profile — account info + rank, pathway badges, topic progress, Quiz Room history (click your username in the navbar). Includes a public/private visibility toggle and the guest "Save Progress" upgrade flow. |
 | `/leaderboard` | Top Performers leaderboard (member-facing; also a section on the profile). Usernames link to `/u/:username`. Guests are excluded from ranking. |
 | `/u/:username` | Public view of a member's profile (username, avatar, member-since, pathway badges, module/room rank) — only if they've opted in via the profile toggle, or if the viewer is an admin (who can bypass the privacy gate from the Admin Panel). Otherwise shows a "private" state. `noindex`, not in the sitemap. |
-| `/announcements` | Unit newsletter — signed-in members only (guests explicitly excluded, unlike most of the site). Sortable (Newest/Oldest/A-Z/Z-A cycle button) and searchable by title/date. Admins get inline create/edit/delete. |
+| `/announcements` | Unit newsletter — public, viewable signed-out, as a guest, or as any member role. Sortable (Newest/Oldest/A-Z/Z-A cycle button) and searchable by title/date. Admins get inline create/edit/delete. |
+| `/events` | Club events — meetings, CTF competitions, guest talks. Public, same visibility as Announcements. Split into Upcoming/Past sections by date. Admins get inline create/edit/delete. |
 | `/contact` | Contact Us — public feedback form (rate-limited, no login required) plus direct unit contact info |
 | `/admin` | Admin panel — user/role management; click a username to open their `/u/:username` profile |
 | `/verify/:code` | Trust page for the UNG Cyber Unit Discord bot's pwn.college account-link codes (bot repo: `J-Acklen/cyber_discord_bot`) — unrelated to the navbar Discord invite link. `noindex`, not in the sitemap. |
@@ -180,9 +181,11 @@ cybersec-basics/
 | `/api/bot/progress/:discordId` (GET) | Server-to-server only (`X-Bot-Secret` header, not a browser session) — same public-subset whitelist as `/api/user/:username`, looked up by linked Discord ID instead of username; used by the Discord bot's `/website stats` command |
 | `/api/bot/pathfinder-status` (GET) | Server-to-server only (`X-Bot-Secret`) — `{discord_id, complete}` for every linked account, used by the Discord bot's background auto-role check |
 | `/api/leaderboard?mode=modules\|rooms` | Top performers — by topic-quiz points (`modules`, default) or quiz-room points (`rooms`); guests excluded |
-| `/api/announcements` (GET) | Signed-in non-guest member — list all announcements, newest first |
+| `/api/announcements` (GET) | Public — anyone, signed in or not — list all announcements, newest first |
 | `/api/announcements` (POST), `/api/announcements/:id` (PATCH/DELETE) | Admin only — create/edit/delete; any admin can manage any post (not creator-restricted) |
 | `/api/announcements/seen` (POST) | Signed-in non-guest member — stamps `users.last_seen_announcements`, clearing the nav unread badge |
+| `/api/events` (GET) | Public — anyone, signed in or not — list all club events, ordered by date (client buckets into upcoming/past) |
+| `/api/events` (POST), `/api/events/:id` (PATCH/DELETE) | Admin only — create/edit/delete; any admin can manage any event (not creator-restricted) |
 | `/api/feedback` (POST) | Anyone, signed in or not — public feedback/contact form, IP rate-limited (5/hr) |
 | `/api/feedback` (GET), `/api/feedback/:id` (DELETE) | Admin only — review/dismiss submissions |
 | `/api/admin/users` (GET) | Admin — list all users |

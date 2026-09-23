@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Upcoming meetings, CTF competitions, and guest talks from the CyberUnit @ UNG cybersecurity club.">
+  <title>CyberUnit @ UNG — Events</title>
+  <link rel="icon" href="/favicon.ico" type="image/x-icon">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+  <!-- ─── Navbar ──────────────────────────────────────────── -->
+  <nav class="navbar" role="navigation" aria-label="Main navigation">
+    <div class="container">
+      <a href="/" class="navbar-logo"><img src="/images/CyberUnitLogo_Transparent.png" alt="CyberUnit @ UNG" class="navbar-logo-img"><span class="navbar-logo-text">[ CyberUnit @ UNG ]</span></a>
+      <button class="hamburger" id="hamburger" aria-label="Toggle navigation" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
+      <ul class="navbar-links" id="navLinks">
+        <li><a href="/">Home</a></li>
+        <li><a href="/about">About</a></li>
+        <li><a href="https://discord.gg/BjU632E7sV" target="_blank" rel="noopener noreferrer" class="btn btn-sm navbar-discord-btn">Discord</a></li>
+        <li id="authNavItem"></li>
+      </ul>
+    </div>
+  </nav>
+
+  <main class="page-body">
+    <div class="container" style="max-width: 800px; padding: 2rem 1rem;">
+
+      <header style="margin-bottom: 2rem;">
+        <h1>// Club Events</h1>
+        <p style="color: var(--text-muted); font-family: 'Share Tech Mono', monospace; font-size: 0.85rem; margin: 0.4rem 0 0;">
+          Meetings, CTF competitions, and guest talks
+        </p>
+      </header>
+
+      <!-- Public: viewable signed-out, as a guest, or as any member role -->
+      <div id="eventsContent" hidden>
+
+        <!-- Admin-only: create a new event -->
+        <div id="eventFormWrap" hidden></div>
+
+        <div id="eventsUpcomingSection">
+          <h2 class="instructor-section-heading">// Upcoming</h2>
+          <div id="eventsUpcomingList">
+            <p style="color: var(--text-muted); font-family: 'Share Tech Mono', monospace;">Loading...</p>
+          </div>
+        </div>
+
+        <div id="eventsPastSection" style="margin-top: 2.5rem;">
+          <h2 class="instructor-section-heading">// Past</h2>
+          <div id="eventsPastList"></div>
+        </div>
+
+      </div>
+
+    </div>
+  </main>
+
+  <script type="module" src="/js/main.js"></script>
+</body>
+</html>

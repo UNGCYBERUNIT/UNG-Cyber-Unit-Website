@@ -1894,13 +1894,154 @@ describe('DELETE /api/announcements/:id', () => {
   });
 });
 
+describe('GET /api/events', () => {
+  test('should be readable with no session (public)', async () => {
+    const res = await worker.fetch(
+      new Request('https://example.com/api/events'),
+      { JWT_SECRET: SECRET, DB: mockDB() },
+    );
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.ok(Array.isArray(data.results));
+  });
+
+  test('should be readable by a guest too', async () => {
+    const cookie = await sessionCookieFor({ sub: 9, username: 'guest-abc', role: 'guest' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/events', { headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: mockDB() },
+    );
+    assert.equal(res.status, 200);
+  });
+});
+
+describe('POST /api/events', () => {
+  const post = (body, cookie) => worker.fetch(
+    new Request('https://example.com/api/events', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(cookie ? { Cookie: cookie } : {}) },
+      body: JSON.stringify(body),
+    }),
+    { JWT_SECRET: SECRET, DB: mockDB() },
+  );
+
+  for (const role of ['member', 'instructor']) {
+    test(`should reject a ${role} (admin-only)`, async () => {
+      const cookie = await sessionCookieFor({ sub: 1, username: 'alice', role });
+      const res = await post({ title: 'Hi', description: 'Body', event_date: '2027-01-01' }, cookie);
+      assert.equal(res.status, 403);
+    });
+  }
+
+  test('should reject an empty title or description', async () => {
+    const cookie = await sessionCookieFor({ sub: 1, username: 'admin1', role: 'admin' });
+    const res1 = await post({ title: '', description: 'Body', event_date: '2027-01-01' }, cookie);
+    assert.equal(res1.status, 400);
+    const res2 = await post({ title: 'Title', description: '  ', event_date: '2027-01-01' }, cookie);
+    assert.equal(res2.status, 400);
+  });
+
+  test('should reject an invalid event_date', async () => {
+    const cookie = await sessionCookieFor({ sub: 1, username: 'admin1', role: 'admin' });
+    const res = await post({ title: 'Title', description: 'Body', event_date: 'not-a-date' }, cookie);
+    assert.equal(res.status, 400);
+  });
+
+  test('should create the event for an admin', async () => {
+    const db = mockDB();
+    const cookie = await sessionCookieFor({ sub: 1, username: 'admin1', role: 'admin' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Cookie: cookie },
+        body: JSON.stringify({ title: 'CTF Night', description: 'Bring a laptop', location: 'Rm 204', event_date: '2027-03-01' }),
+      }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 201);
+    const data = await res.json();
+    assert.equal(data.title, 'CTF Night');
+    assert.equal(data.location, 'Rm 204');
+    const insert = db.calls.find(c => c.op === 'run');
+    assert.match(insert.sql, /INSERT INTO events/);
+    assert.deepEqual(insert.bindings, ['CTF Night', 'Bring a laptop', 'Rm 204', data.event_date, 1, data.created_at]);
+  });
+});
+
+describe('PATCH /api/events/:id', () => {
+  test('should reject a non-admin', async () => {
+    const cookie = await sessionCookieFor({ sub: 2, username: 'inst', role: 'instructor' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/events/5', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Cookie: cookie },
+        body: JSON.stringify({ title: 'X', description: 'Y', event_date: '2027-01-01' }),
+      }),
+      { JWT_SECRET: SECRET, DB: mockDB() },
+    );
+    assert.equal(res.status, 403);
+  });
+
+  test('should let any admin edit any event (no per-creator ownership check)', async () => {
+    const db = mockDB();
+    const cookie = await sessionCookieFor({ sub: 99, username: 'another-admin', role: 'admin' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/events/5', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Cookie: cookie },
+        body: JSON.stringify({ title: 'Updated Title', description: 'Updated body', event_date: '2027-01-01' }),
+      }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 200);
+    const update = db.calls.find(c => c.op === 'run');
+    assert.match(update.sql, /UPDATE events SET title = \?, description = \?, location = \?, event_date = \?, updated_at = \? WHERE id = \?/);
+    assert.equal(update.bindings[0], 'Updated Title');
+    assert.equal(update.bindings[5], '5');
+  });
+});
+
+describe('DELETE /api/events/:id', () => {
+  test('should reject a non-admin', async () => {
+    const cookie = await sessionCookieFor({ sub: 2, username: 'member1', role: 'member' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/events/5', { method: 'DELETE', headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: mockDB() },
+    );
+    assert.equal(res.status, 403);
+  });
+
+  test('should delete for an admin', async () => {
+    const db = mockDB();
+    const cookie = await sessionCookieFor({ sub: 1, username: 'admin1', role: 'admin' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/events/5', { method: 'DELETE', headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 200);
+    const del = db.calls.find(c => c.op === 'run');
+    assert.match(del.sql, /DELETE FROM events WHERE id = \?/);
+  });
+
+  test('should 404 for an unknown id', async () => {
+    const db = mockDB();
+    db.prepare = (sql) => ({ bind: (...bindings) => ({ run: async () => ({ meta: { changes: 0 } }) }) });
+    const cookie = await sessionCookieFor({ sub: 1, username: 'admin1', role: 'admin' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/events/999', { method: 'DELETE', headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 404);
+  });
+});
+
 // ─── Page rendering (served through env.ASSETS, backed by real public/*.html) ──
 // These exercise the actual SSR injection paths in worker.js — the class of bug
 // that shipped silently before (an unknown /topic/:id serving a 200 "soft 404",
 // and topic pages shipping only a client-rendered "Loading topic..." shell).
 
 describe('Static/simple pages', () => {
-  const pages = ['/', '/start', '/about', '/resources', '/profile', '/admin', '/instructor', '/quiz', '/leaderboard', '/announcements'];
+  const pages = ['/', '/start', '/about', '/resources', '/profile', '/admin', '/instructor', '/quiz', '/leaderboard', '/announcements', '/events'];
 
   for (const path of pages) {
     test(`GET ${path} should render 200 HTML with no leftover template placeholders`, async () => {
