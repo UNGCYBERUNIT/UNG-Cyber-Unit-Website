@@ -80,6 +80,23 @@ a real but private account → `403` (no data). The leaderboard links every user
 opened, not by hiding the link. `/members` is different: it's a browsable list gated to
 `is_public = 1` users only, so it never links to a private profile in the first place.
 
+**Web Exploitation Lab** (see `docs/plan-intermediate-track.md`): the "Breach the Portal" CTF
+module's login endpoint (`POST /api/lab/web-exploitation/login` in worker.js) is a **real, live
+SQL injection vulnerability** — the query is built with raw string concatenation on purpose,
+not a simulation. This is only safe because it runs against `env.WEBEXPLOIT_DB`, a **second,
+physically separate D1 database** (its own `[[d1_databases]]` binding in `wrangler.toml`,
+schema in `webexploit-schema.sql` at the repo root) containing nothing but synthetic fake
+"employees" — never the real site's `cyber-unit-db`. This isolation is the entire safety
+mechanism: even a full UNION-based extraction against this endpoint can only ever reach
+made-up lab data, because the real `users` table isn't in the same database to UNION against.
+**Never point this route (or any future intentionally-vulnerable lab) at `env.DB`, and never
+merge `webexploit-schema.sql` into `schema.sql`.** If a future lab needs its own vulnerable
+surface (XSS, IDOR, etc.), give it the same treatment: a dedicated D1 database if it touches
+data at all, so a real exploit's blast radius is structurally capped at "fake lab data," not
+"whatever else happens to share the database." The flag itself (`PORTALBREACHED2026`) follows
+the same rule as every other challenge answer — lives only in `challenge_answers` on the main
+`DB`, never in this file or the repo.
+
 **Question Bank** (see `docs/plan-question-bank.md`): `question_bank`/`question_bank_items`
 are reusable question templates, private per-instructor — same ownership pattern as Quiz
 Rooms (`requireRole('instructor')` + `created_by === session.sub || admin`), no shared/

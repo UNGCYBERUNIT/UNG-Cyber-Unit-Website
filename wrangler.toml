@@ -9,12 +9,23 @@ binding = "ASSETS"
 # (CSP, X-Frame-Options, etc.); static files would otherwise bypass them. Only
 # the pages are listed — CSS/JS/images stay served directly by the asset layer
 # (correct MIME, edge-fast). The "/" branch also server-renders the topic grid.
-run_worker_first = [ "/", "/start", "/about", "/resources", "/admin", "/instructor", "/profile", "/quiz", "/leaderboard", "/members", "/announcements", "/events", "/feedback", "/contact", "/student-hub", "/log-analysis-challenge", "/network-traffic-challenge", "/challenges" ]
+run_worker_first = [ "/", "/start", "/about", "/resources", "/admin", "/instructor", "/profile", "/quiz", "/leaderboard", "/members", "/announcements", "/events", "/feedback", "/contact", "/student-hub", "/log-analysis-challenge", "/network-traffic-challenge", "/challenges", "/lab/web-exploitation-portal" ]
 
 [[d1_databases]]
 binding      = "DB"
 database_name = "cyber-unit-db"
 database_id  = "30fcf0cc-9912-430e-a8d2-54b9dec9ba1a"
+
+# Deliberately separate database (not just separate tables in DB above) for
+# the "Breach the Portal" web-exploitation lab (see docs/plan-intermediate-
+# track.md and CLAUDE.md's "Web Exploitation Lab" section). The lab's login
+# endpoint is intentionally SQL-injectable — a real vulnerability, not a
+# simulation — so it must be physically incapable of reaching real user
+# data via a UNION-based injection. Only ever touches this database.
+[[d1_databases]]
+binding      = "WEBEXPLOIT_DB"
+database_name = "cyber-unit-webexploit-db"
+database_id  = "1296989b-2ee4-45ac-a579-1d08de247136"
 
 # Discord OAuth client ID (see docs/plan-discord-pairing.md) — not sensitive,
 # it's embedded in the public OAuth authorize URL regardless, so it lives

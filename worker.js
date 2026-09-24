@@ -1724,6 +1724,42 @@ const ctfModules = [
     ],
     ethicsNotice: true,
   },
+  {
+    id: 'web-exploitation',
+    title: 'Breach the Portal',
+    category: 'Web Exploitation',
+    difficulty: 'Intermediate',
+    icon: '🌐',
+    shortDesc: 'A live, genuinely vulnerable employee login page — find the flaw and read data you shouldn\'t be able to.',
+    pageUrl: '/challenges/web-exploitation',
+    target: {
+      url: '/lab/web-exploitation-portal',
+      label: 'Employee Portal (Live Target)',
+      desc: 'A real running login page — this one is actually exploitable, not a simulation',
+      icon: '🎯',
+    },
+    toolbox: [
+      { name: 'Your browser', desc: 'No special tools needed — a login form and some SQL intuition is enough.' },
+      { name: 'SQL injection basics', desc: 'A classic auth-bypass payload breaks out of a quoted string and neutralizes the rest of the query — e.g. ending the username with a quote, then commenting out whatever follows.' },
+    ],
+    briefing: {
+      sections: [
+        {
+          heading: 'Situation',
+          body: 'A small internal tool for the campus IT team leaked its login URL. It\'s a basic username/password form — nothing fancy. Nothing about the page itself hints at a problem. The problem is in how it checks your password.',
+        },
+      ],
+    },
+    parts: [
+      {
+        id: 'auth-bypass',
+        title: 'Bypass the Login',
+        difficulty: 'medium',
+        desc: 'You don\'t have a valid password for any account — you\'re not supposed to. Get past the login anyway, land in the administrator\'s account, and read what\'s sitting in their notes.',
+      },
+    ],
+    ethicsNotice: true,
+  },
 ];
 
 // SEO meta block for a generic (new-style) CTF module page, same shape as
@@ -4328,6 +4364,45 @@ export default {
       return jsonResponse({ correct: true });
     }
 
+    // ── Web Exploitation Lab: intentionally vulnerable login ─────────────────
+    // Backs the "Breach the Portal" CTF module (ctfModules id
+    // 'web-exploitation'). This endpoint builds SQL via raw string
+    // concatenation ON PURPOSE — a real SQL injection vulnerability, not a
+    // simulated one — because that's the entire point of the lab. It is
+    // ONLY ever allowed to touch env.WEBEXPLOIT_DB, a physically separate D1
+    // database from the site's real one (see wrangler.toml and
+    // webexploit-schema.sql) containing nothing but synthetic fake
+    // employees — so even a full UNION-based extraction can never reach a
+    // real user's data. Do not "fix" this query to be parameterized (that
+    // would break the lab) and do not ever point this route at env.DB.
+    if (path === '/api/lab/web-exploitation/login' && request.method === 'POST') {
+      if (!env.WEBEXPLOIT_DB) return jsonResponse({ error: 'Lab not configured' }, 503);
+
+      let body;
+      try { body = await request.json(); } catch { return jsonResponse({ error: 'Invalid request body' }, 400); }
+      const username = (body?.username ?? '').toString();
+      const password = (body?.password ?? '').toString();
+      if (username.length > 200 || password.length > 200) {
+        return jsonResponse({ error: 'Input too long' }, 400);
+      }
+
+      const query = `SELECT id, username, role, notes FROM webexploit_employees WHERE username = '${username}' AND password = '${password}'`;
+      let row;
+      try {
+        row = await env.WEBEXPLOIT_DB.prepare(query).first();
+      } catch (err) {
+        // A malformed injection payload (mismatched quotes, etc.) throws a
+        // SQL syntax error here — that's expected and part of the puzzle,
+        // not a bug. Surface it plainly rather than a generic 500, since
+        // seeing the raw SQLite error is itself a useful signal in a real
+        // SQLi attack (this is intentionally not hardened against that).
+        return jsonResponse({ success: false, message: `Query error: ${err.message}` });
+      }
+
+      if (!row) return jsonResponse({ success: false, message: 'Invalid username or password.' });
+      return jsonResponse({ success: true, username: row.username, role: row.role, notes: row.notes });
+    }
+
     // ── Per-topic cheat-sheet PDF ─────────────────────────────────────────────
     // Same "friendly route → static asset" idea as /sop, but per-topic and
     // dynamic. Unlike the HTML view routes below, this response has no
@@ -4371,6 +4446,7 @@ export default {
       '/log-analysis-challenge': '/log-analysis-challenge',
       '/network-traffic-challenge': '/network-traffic-challenge',
       '/challenges': '/challenges',
+      '/lab/web-exploitation-portal': '/lab/web-exploitation-portal',
     };
 
     // topic/:id — any path matching /topic/<something>

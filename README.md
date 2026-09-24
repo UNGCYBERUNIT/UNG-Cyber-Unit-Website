@@ -71,11 +71,11 @@ Instructors can host live quizzes separate from the self-paced topic quizzes abo
 | Layer | Technology |
 |-------|-----------|
 | Runtime | Cloudflare Workers |
-| Database | Cloudflare D1 (`schema.sql`) |
+| Database | Cloudflare D1 (`schema.sql`) — plus a second, physically separate D1 database (`webexploit-schema.sql`) backing only the intentionally-vulnerable "Breach the Portal" CTF lab, so its real SQL injection vulnerability can never reach real site data. See `CLAUDE.md`'s "Web Exploitation Lab" section |
 | Static assets | Cloudflare Workers Assets (`./public`) |
 | Frontend | Vanilla HTML / CSS / JS |
 | Auth | Custom JWT (HS256) + PBKDF2 password hashing; HttpOnly, `SameSite=Strict`, `Secure`-when-HTTPS session cookie. Member/instructor/admin sessions last 7 days, guest sessions are capped at 2 hours and can never self-heal into a longer-lived cookie (closes a stale-guest-cookie replay path — see `CLAUDE.md`) |
-| Input validation | Server-side length caps on all Quiz Room fields, 1MB question-file cap, CSV/formula-injection sanitization on exported reports, parameterized SQL throughout. Topic-quiz scores are computed server-side from the real answer key (client submits selected answer indices, never a raw score) |
+| Input validation | Server-side length caps on all Quiz Room fields, 1MB question-file cap, CSV/formula-injection sanitization on exported reports, parameterized SQL throughout — except one route, deliberately: the web-exploitation lab's login endpoint, isolated to its own database for exactly this reason. Topic-quiz scores are computed server-side from the real answer key (client submits selected answer indices, never a raw score) |
 | Rate limiting | Per-IP sliding windows on account creation (register + guest, 10/hr), the public feedback form (5/hr), and forgot-password/forgot-username (5/hr); all self-prune on write, with hourly cron cleanup for residual rows once traffic stops |
 | Room privacy | Room codes are 32⁸ (~2⁴⁰) CSPRNG values; unknown/closed/expired codes all return an identical 404 (no existence oracle); failed code lookups are rate-limited per IP (20 / 10 min) to block brute-force enumeration |
 | Deployment | Wrangler CLI, auto-deployed on push to `main` via GitHub Actions (`.github/workflows/deploy.yml`) |
@@ -102,14 +102,20 @@ cybersec-basics/
 │   ├── challenges/log-analysis-regex/  # Static downloads for the page above (zip/pdf/pptx) — `Disallow`ed in robots.txt
 │   ├── network-traffic-challenge.html  # Downloadable workshop: Wireshark NTA live demo, capture file, slides
 │   ├── challenges/wireshark-nta/  # Static downloads for the page above (pcapng/pptx) — `Disallow`ed in robots.txt
+│   ├── challenges.html    # CTF hub grid (server-rendered from `ctfModules` in worker.js)
+│   ├── challenge-module.html  # Shared shell for every generic /challenges/:id module page
+│   ├── challenges/crypto-layers/, challenges/hidden-in-plain-sight/, challenges/crack-the-vault/  # Downloadable puzzle artifacts for those three modules
+│   ├── lab/web-exploitation-portal.html  # Live target for the "Breach the Portal" module — genuinely SQL-injectable, see CLAUDE.md
 │   ├── css/               # Global stylesheet
 │   ├── images/            # Topic images
 │   └── js/                # Client-side scripts
 │       ├── main.js          # Nav/auth/profile/quiz/admin-panel client logic, per-page init dispatch
 │       ├── start.js          # /start pathway page enhancement
+│       ├── lab-web-exploitation.js  # Standalone script for the web-exploitation lab's login form (no imports, not part of main.js's dispatch)
 │       └── topic-render.js  # Isomorphic: topic lesson-content renderer, imported by both worker.js and main.js
 ├── worker.js              # Cloudflare Worker — the only entry point: routing, API, auth, security headers
-├── schema.sql              # D1 schema (users [incl. role/streak/last_active/is_public/discord_id], quiz_results, quiz_rooms, quiz_room_questions, quiz_room_attempts, quiz_room_answers, question_bank, question_bank_items, announcements, events, audit_log, feedback, challenge_answer_keys, challenge_answers, challenge_completions, and the room_lookup_failures/feedback_rate_limit/email_action_rate_limit/signup_rate_limit/challenge_submit_rate_limit sliding-window rate-limit tables)
+├── schema.sql              # D1 schema for the main `DB` binding (users [incl. role/streak/last_active/is_public/discord_id], quiz_results, quiz_rooms, quiz_room_questions, quiz_room_attempts, quiz_room_answers, question_bank, question_bank_items, announcements, events, audit_log, feedback, challenge_answer_keys, challenge_answers, challenge_completions, and the room_lookup_failures/feedback_rate_limit/email_action_rate_limit/signup_rate_limit/challenge_submit_rate_limit sliding-window rate-limit tables)
+├── webexploit-schema.sql   # D1 schema for the separate `WEBEXPLOIT_DB` binding — one table (`webexploit_employees`), synthetic lab data only, see CLAUDE.md's "Web Exploitation Lab" section
 ├── answer-keys/            # (gitignored) local source files for challenge_answer_keys — never committed, re-ingest via `wrangler d1 execute --file`
 ├── test/worker.test.mjs    # Unit tests (see Tests below)
 ├── wrangler.toml           # Cloudflare Workers configuration
@@ -141,6 +147,9 @@ cybersec-basics/
 | `/cheatsheet/:id` | Per-topic one-page PDF quick-reference, when one exists for that topic id (`public/cheatsheets/<id>.pdf`, `Disallow`ed in robots.txt like `/sop`'s raw file). Linked from a "Download Cheat-Sheet" button on the topic page, shown only for topics in the in-code `topicsWithCheatSheet` set. |
 | `/log-analysis-challenge` | Log Analysis & Regex workshop — five downloadable log-hunting challenges, the slide deck, and a regex quick-reference PDF (assets under `public/challenges/log-analysis-regex/`, `Disallow`ed in robots.txt). Instructors/admins also see a link to the answer key, served from `/api/challenges/:id/answer-key` above. |
 | `/network-traffic-challenge` | Network Traffic Analysis & Wireshark workshop — a live-demo Telnet-cleartext capture challenge, the class `.pcapng`, and the slide deck (assets under `public/challenges/wireshark-nta/`, `Disallow`ed in robots.txt). Instructors/admins also see a link to the answer key. |
+| `/challenges` | CTF challenge hub — server-rendered grid of every module (the two pages above plus every generic `/challenges/:id` module below), with a per-user completion badge |
+| `/challenges/:id` | Generic CTF module page (crypto-layers, hidden-in-plain-sight, crack-the-vault, web-exploitation) — briefing, downloads or live target, toolbox, multi-part flag submission, instructor answer key. Server-rendered from the `ctfModules` array in `worker.js`; unknown or legacy ids 404 |
+| `/lab/web-exploitation-portal` | The "Breach the Portal" CTF module's live target — a fake employee login page, genuinely SQL-injectable by design (see `CLAUDE.md`'s "Web Exploitation Lab" section). `noindex` |
 | `/instructor` | Instructor panel — create/manage Quiz Rooms, grade free responses |
 | `/student-hub` | Student-only quiz rooms — gated to the admin-assigned `student` role and above |
 | `/quiz` | **Join Room** — browse public Quiz Rooms, or enter a private room code |
@@ -207,6 +216,7 @@ cybersec-basics/
 | `/api/rooms/:code/save-as-template` (POST) | Instructor (room owner or admin) — snapshot the room's current questions into a new Question Bank entry (title defaults to the room's) |
 | `/api/question-bank` (POST/GET) | Instructor — save a new reusable question template / list your own templates. Private per-instructor, no shared bank |
 | `/api/question-bank/:id` (GET/DELETE) | Instructor (bank owner or admin) — template detail with items / delete (cascades items) |
+| `/api/lab/web-exploitation/login` (POST) | Public, no auth — the "Breach the Portal" CTF lab's intentionally SQL-injectable login. Runs only against the isolated `WEBEXPLOIT_DB`, never the real site database |
 
 ### Scheduled Cleanup
 

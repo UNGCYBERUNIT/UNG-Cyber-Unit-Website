@@ -3310,6 +3310,120 @@ describe('POST /api/challenges/:id/submit', () => {
   });
 });
 
+describe('POST /api/lab/web-exploitation/login', () => {
+  // A mock WEBEXPLOIT_DB that behaves like real SQLite would for this
+  // endpoint's raw-concatenated query — proving the route is genuinely
+  // exploitable (not simulated) without needing a real SQL engine. It
+  // pattern-matches the literal query text worker.js builds, same as
+  // SQLite would actually evaluate it, against one seeded fake admin row.
+  function mockWebexploitDB({ throwOnQuery = false } = {}) {
+    const calls = [];
+    return {
+      calls,
+      WEBEXPLOIT_DB: {
+        prepare(sql) {
+          calls.push(sql);
+          return {
+            first: async () => {
+              if (throwOnQuery) throw new Error('near "OR": syntax error');
+              // Legitimate credentials.
+              if (sql.includes("username = 'admin' AND password = 'SuperSecret2026!'")) {
+                return { id: 1, username: 'admin', role: 'administrator', notes: 'SYSTEM FLAG: fake-test-flag-xyz' };
+              }
+              // Classic auth-bypass payloads — the vulnerable query has no
+              // escaping, so these genuinely alter the SQL's logic exactly
+              // like they would against real SQLite.
+              if (/username = '.*' OR '1'='1'/.test(sql) || sql.includes("username = 'admin'--")) {
+                return { id: 1, username: 'admin', role: 'administrator', notes: 'SYSTEM FLAG: fake-test-flag-xyz' };
+              }
+              return null;
+            },
+          };
+        },
+      },
+    };
+  }
+
+  test('should 503 when the lab database is not configured', async () => {
+    const res = await worker.fetch(
+      new Request('https://example.com/api/lab/web-exploitation/login', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'x', password: 'y' }),
+      }),
+      {},
+    );
+    assert.equal(res.status, 503);
+  });
+
+  test('should reject invalid credentials without revealing anything', async () => {
+    const res = await worker.fetch(
+      new Request('https://example.com/api/lab/web-exploitation/login', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'nobody', password: 'wrong' }),
+      }),
+      mockWebexploitDB(),
+    );
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.success, false);
+  });
+
+  test('should log in with the real seeded credentials', async () => {
+    const res = await worker.fetch(
+      new Request('https://example.com/api/lab/web-exploitation/login', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: 'admin', password: 'SuperSecret2026!' }),
+      }),
+      mockWebexploitDB(),
+    );
+    const data = await res.json();
+    assert.equal(data.success, true);
+    assert.equal(data.role, 'administrator');
+  });
+
+  test('should be bypassable via classic SQL injection — this route is genuinely vulnerable by design', async () => {
+    const db = mockWebexploitDB();
+    const res = await worker.fetch(
+      new Request('https://example.com/api/lab/web-exploitation/login', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: "' OR '1'='1' -- ", password: 'anything' }),
+      }),
+      db,
+    );
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.success, true);
+    assert.equal(data.role, 'administrator');
+    assert.ok(data.notes.length > 0);
+    // Confirm the vulnerability is structural: the raw payload must appear
+    // unescaped in the query sent to the database, not sanitized away.
+    assert.ok(db.calls[0].includes("' OR '1'='1' -- "));
+  });
+
+  test('should surface a SQL syntax error from a malformed payload rather than a generic 500', async () => {
+    const res = await worker.fetch(
+      new Request('https://example.com/api/lab/web-exploitation/login', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: "'", password: 'x' }),
+      }),
+      mockWebexploitDB({ throwOnQuery: true }),
+    );
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.success, false);
+    assert.match(data.message, /Query error/);
+  });
+
+  test('should reject overly long input', async () => {
+    const res = await worker.fetch(
+      new Request('https://example.com/api/lab/web-exploitation/login', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: 'a'.repeat(201), password: 'x' }),
+      }),
+      mockWebexploitDB(),
+    );
+    assert.equal(res.status, 400);
+  });
+});
+
 describe('Unknown routes', () => {
   test('should 404 for a nonsense path', async () => {
     const res = await worker.fetch(new Request('https://example.com/this-page-does-not-exist'), { ASSETS: mockAssets() });
