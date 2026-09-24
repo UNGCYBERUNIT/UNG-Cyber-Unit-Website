@@ -3513,3 +3513,63 @@ footer {
   font-family: 'Share Tech Mono', monospace;
   font-size: 0.9rem;
 }
+
+/* Prev/next/hub nav at the bottom of every CTF module page. */
+.lac-module-nav {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 2.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
+}
+.lac-module-nav-link {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  text-decoration: none;
+  transition: border-color 0.15s, color 0.15s;
+}
+.lac-module-nav-link:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.lac-module-nav-link--next { justify-content: flex-end; text-align: right; }
+.lac-module-nav-arrow {
+  font-size: 1.2rem;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+.lac-module-nav-text { min-width: 0; }
+.lac-module-nav-label {
+  display: block;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+.lac-module-nav-hub {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0.75rem 1.1rem;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.lac-module-nav-hub:hover { color: var(--accent); }
+@media (max-width: 640px) {
+  .lac-module-nav { flex-direction: column; }
+  .lac-module-nav-link--next { justify-content: flex-start; text-align: left; }
+}

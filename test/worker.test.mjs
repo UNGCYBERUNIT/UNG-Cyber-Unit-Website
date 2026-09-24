@@ -43,6 +43,7 @@ import worker, {
   CHALLENGE_PARTS,
   challengeCard,
   challengesHubCards,
+  challengeModuleNavHtml,
 } from '../worker.js';
 
 // ─── Test fixtures ────────────────────────────────────────────────────────────
@@ -943,6 +944,33 @@ describe('challengeCard / challengesHubCards', () => {
     assert.match(html, /href="\/log-analysis-challenge"/);
     assert.match(html, /href="\/network-traffic-challenge"/);
     assert.equal((html.match(/class="card card-link"/g) || []).length, ctfModules.length);
+  });
+});
+
+describe('challengeModuleNavHtml', () => {
+  test('should return an empty string for an unknown id', () => {
+    assert.equal(challengeModuleNavHtml('nope'), '');
+  });
+
+  test('should link to the actual prev/next modules by array order', () => {
+    const idx = ctfModules.findIndex(m => m.id === 'crypto-layers');
+    const prev = ctfModules[idx - 1];
+    const next = ctfModules[idx + 1];
+    const html = challengeModuleNavHtml('crypto-layers');
+    assert.match(html, new RegExp(`href="${prev.pageUrl.replace(/\//g, '\\/')}"`));
+    assert.match(html, new RegExp(`href="${next.pageUrl.replace(/\//g, '\\/')}"`));
+    assert.match(html, /href="\/challenges"/);
+    assert.ok(html.includes(escapeHtml(prev.title)));
+    assert.ok(html.includes(escapeHtml(next.title)));
+  });
+
+  test('should wrap around at both ends', () => {
+    const first = ctfModules[0];
+    const last = ctfModules[ctfModules.length - 1];
+    const htmlForFirst = challengeModuleNavHtml(first.id);
+    assert.match(htmlForFirst, new RegExp(`href="${last.pageUrl.replace(/\//g, '\\/')}"`)); // prev wraps to last
+    const htmlForLast = challengeModuleNavHtml(last.id);
+    assert.match(htmlForLast, new RegExp(`href="${first.pageUrl.replace(/\//g, '\\/')}"`)); // next wraps to first
   });
 });
 

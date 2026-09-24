@@ -1805,6 +1805,27 @@ function renderChallengeModule(m) {
           </div>
         </div>`).join('');
 
+  // Live-target modules (e.g. web exploitation) attack a real running app
+  // instead of a downloaded file — no "Download" section for those, a
+  // "Target" section with a link to the live app instead.
+  const targetSection = m.target ? `
+      <section class="instructor-section">
+        <h2 class="instructor-section-heading">// Target</h2>
+        <div class="lac-downloads">
+          <a class="card lac-download-card" href="${m.target.url}" target="_blank" rel="noopener noreferrer">
+            <span class="lac-download-icon" aria-hidden="true">${m.target.icon ?? '🎯'}</span>
+            <span class="lac-download-name">${escapeHtml(m.target.label)}</span>
+            <span class="lac-download-desc">${escapeHtml(m.target.desc)}</span>
+          </a>
+        </div>
+      </section>` : '';
+
+  const downloadsSection = downloads ? `
+      <section class="instructor-section">
+        <h2 class="instructor-section-heading">// Download</h2>
+        <div class="lac-downloads">${downloads}</div>
+      </section>` : '';
+
   return `
       <header style="margin-bottom: 1.5rem;">
         <h1>// ${escapeHtml(m.title)}</h1>
@@ -1814,11 +1835,8 @@ function renderChallengeModule(m) {
       </header>
 
       ${ethics}
-
-      <section class="instructor-section">
-        <h2 class="instructor-section-heading">// Download</h2>
-        <div class="lac-downloads">${downloads}</div>
-      </section>
+      ${targetSection}
+      ${downloadsSection}
 
       <section class="instructor-section">
         <h2 class="instructor-section-heading">// Your Toolbox</h2>
@@ -1838,7 +1856,31 @@ function renderChallengeModule(m) {
       <section class="instructor-section" id="answerKeySection" hidden>
         <h2 class="instructor-section-heading">// Instructor Answer Key</h2>
         <a class="btn btn-sm" href="/api/challenges/${m.id}/answer-key">Download Answer Key</a>
-      </section>`;
+      </section>
+
+      ${challengeModuleNavHtml(m.id)}`;
+}
+
+// Prev/next/hub navigation, shown at the bottom of every CTF module page
+// (both new-style and the two legacy pages) — wraps around at the ends.
+// Order follows ctfModules array order, the same order the hub lists them in.
+function challengeModuleNavHtml(currentId) {
+  const idx = ctfModules.findIndex(m => m.id === currentId);
+  if (idx === -1) return '';
+  const prev = ctfModules[(idx - 1 + ctfModules.length) % ctfModules.length];
+  const next = ctfModules[(idx + 1) % ctfModules.length];
+  return `
+      <nav class="lac-module-nav" aria-label="Other CTF challenges">
+        <a href="${prev.pageUrl}" class="lac-module-nav-link lac-module-nav-link--prev">
+          <span class="lac-module-nav-arrow" aria-hidden="true">←</span>
+          <span class="lac-module-nav-text"><span class="lac-module-nav-label">Previous</span>${escapeHtml(prev.title)}</span>
+        </a>
+        <a href="/challenges" class="lac-module-nav-hub">All Challenges</a>
+        <a href="${next.pageUrl}" class="lac-module-nav-link lac-module-nav-link--next">
+          <span class="lac-module-nav-text"><span class="lac-module-nav-label">Next</span>${escapeHtml(next.title)}</span>
+          <span class="lac-module-nav-arrow" aria-hidden="true">→</span>
+        </a>
+      </nav>`;
 }
 
 // A single CTF module card for the /challenges hub grid — same visual
@@ -2127,6 +2169,7 @@ export {
   challengesHubCards,
   challengeModuleMetaTags,
   renderChallengeModule,
+  challengeModuleNavHtml,
 };
 
 // ─── Worker Entry Point ───────────────────────────────────────────────────────
@@ -4442,6 +4485,18 @@ export default {
           if (path === '/start') {
             const html = (await assetResponse.text())
               .replace('<!-- PATHWAY -->', pathwayHtml());
+            headers.delete('Content-Length');
+            headers.set('Content-Type', 'text/html; charset=utf-8');
+            return new Response(html, { status: assetResponse.status, headers });
+          }
+
+          // Server-render prev/next/hub nav into the two legacy (bespoke)
+          // challenge pages — new-style pages get it as part of
+          // renderChallengeModule()'s own returned content, below.
+          if (path === '/log-analysis-challenge' || path === '/network-traffic-challenge') {
+            const legacyModule = ctfModules.find(x => x.pageUrl === path);
+            const html = (await assetResponse.text())
+              .replace('<!-- CHALLENGE_MODULE_NAV -->', legacyModule ? challengeModuleNavHtml(legacyModule.id) : '');
             headers.delete('Content-Length');
             headers.set('Content-Type', 'text/html; charset=utf-8');
             return new Response(html, { status: assetResponse.status, headers });
