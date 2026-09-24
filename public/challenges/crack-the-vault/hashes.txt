@@ -1,0 +1,4 @@
+# UNG Cyber Unit — recovered credential dump (MD5, unsalted)
+# format: username:hash
+jsmith:d0dfae70ecee372035ff17df7904ca65
+mrivera:55ae0e2665bb12b98a2cd99d1011b58d

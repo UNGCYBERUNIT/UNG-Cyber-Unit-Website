@@ -2887,6 +2887,18 @@ describe('Static/simple pages', () => {
       assert.ok(body.includes(m.pageUrl), `hub links to module ${m.id}`);
     }
   });
+
+  for (const m of ctfModules.filter(x => x.pageUrl.startsWith('/challenges/'))) {
+    test(`GET ${m.pageUrl} (${m.title}) should render its real content, no leftover placeholders`, async () => {
+      const res = await worker.fetch(new Request(`https://example.com${m.pageUrl}`), { ASSETS: mockAssets() });
+      assert.equal(res.status, 200);
+      assert.match(res.headers.get('Content-Type'), /text\/html/);
+      const body = await res.text();
+      assert.ok(body.includes(m.title));
+      for (const p of m.parts) assert.ok(body.includes(`data-part-id="${p.id}"`), `renders part ${p.id}`);
+      assert.doesNotMatch(body, /\{\{.*\}\}/);
+    });
+  }
 });
 
 describe('GET /challenges/:id (generic module page)', () => {

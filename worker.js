@@ -1646,6 +1646,84 @@ const ctfModules = [
     ],
     ethicsNotice: false,
   },
+  {
+    id: 'hidden-in-plain-sight',
+    title: 'Hidden in Plain Sight',
+    category: 'File Forensics',
+    difficulty: 'Intermediate',
+    icon: '🖼️',
+    shortDesc: 'A leaked draft image is hiding two independent flags — one in the pixels, one in the metadata.',
+    pageUrl: '/challenges/hidden-in-plain-sight',
+    downloads: [
+      { filename: 'network_topology_draft.png', label: 'Leaked Draft Image', desc: 'A PNG that leaked before its review was finished' },
+    ],
+    toolbox: [
+      { name: 'exiftool', desc: 'Reads (and writes) embedded metadata — always check this first on any leaked file.' },
+      { name: 'zsteg / stegsolve', desc: 'Purpose-built LSB-steganography scanners for PNG/BMP images.' },
+      { name: 'A few lines of Python (Pillow)', desc: 'LSB data is just the last bit of each pixel channel — trivial to read yourself once you know that.' },
+    ],
+    briefing: {
+      sections: [
+        {
+          heading: 'Situation',
+          body: 'This PNG leaked from an internal review queue before it was supposed to go out. Nothing about the image itself looks unusual at a glance — that\'s the point. Two independent pieces of hidden information are in this single file, using two completely different techniques. Finding one tells you nothing about how to find the other.',
+        },
+      ],
+    },
+    parts: [
+      {
+        id: 'metadata-flag',
+        title: 'Check What Shipped With It',
+        difficulty: 'easy',
+        desc: 'Files carry more than what you see rendered on screen. Every export tool, camera, and editor tends to leave something behind in the file\'s metadata — sometimes a lot more than intended.',
+        targetFile: 'network_topology_draft.png',
+      },
+      {
+        id: 'pixel-flag',
+        title: 'Look Past the Pixels',
+        difficulty: 'medium',
+        desc: 'The image itself is hiding a message in its least significant bits — the part of each pixel\'s color value that changes the color so slightly the human eye can\'t tell the difference, but a script can read perfectly.',
+        targetFile: 'network_topology_draft.png',
+      },
+    ],
+    ethicsNotice: false,
+  },
+  {
+    id: 'crack-the-vault',
+    title: 'Crack the Vault',
+    category: 'Password Auditing',
+    difficulty: 'Intermediate',
+    icon: '🔓',
+    shortDesc: 'Two recovered password hashes, one small wordlist — recover the weaker of the two passwords.',
+    pageUrl: '/challenges/crack-the-vault',
+    downloads: [
+      { filename: 'hashes.txt', label: 'Credential Dump', desc: 'Two username:hash pairs, MD5, unsalted' },
+      { filename: 'wordlist.txt', label: 'Candidate Wordlist', desc: '32 candidate passwords — both real ones are in here' },
+    ],
+    toolbox: [
+      { name: 'hashcat', desc: '`hashcat -m 0 -a 0 hashes.txt wordlist.txt` — mode 0 is raw MD5.' },
+      { name: 'John the Ripper', desc: '`john --format=raw-md5 --wordlist=wordlist.txt hashes.txt` works just as well.' },
+      { name: 'A one-line Python loop', desc: 'For a wordlist this small, hashing every candidate yourself and comparing is completely reasonable — that\'s the whole lesson.' },
+    ],
+    briefing: {
+      sections: [
+        {
+          heading: 'Situation',
+          body: 'A small credential dump was recovered — two accounts, both MD5, no salt. That alone should bother you (MD5 is fast to brute-force and salting is what prevents this exact attack), but tonight you\'re on offense: recover the weaker of the two passwords using the provided wordlist.',
+        },
+      ],
+    },
+    parts: [
+      {
+        id: 'weak-password',
+        title: 'Recover the Weaker Password',
+        difficulty: 'easy',
+        desc: 'One of these two hashes will fall to the wordlist almost instantly. Find it and submit the plaintext password (not the hash, not the username).',
+        targetFile: 'hashes.txt + wordlist.txt',
+      },
+    ],
+    ethicsNotice: true,
+  },
 ];
 
 // SEO meta block for a generic (new-style) CTF module page, same shape as
