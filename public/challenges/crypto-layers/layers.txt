@@ -1,0 +1,23 @@
+UNG Cyber Unit — Intercepted Transmission
+==========================================
+
+A signal was pulled off an open relay last night. Analysts split it into
+two blocks before the link dropped. Both blocks are text — no exotic file
+formats, no hidden data. Everything you need is printable ASCII.
+
+--- BLOCK ONE -------------------------------------------------------------
+
+UExPUkVGVVZSWVE=
+
+--- BLOCK TWO -------------------------------------------------------------
+
+FLBAZUCKMJPQVLZ
+
+-----------------------------------------------------------------------
+
+Analyst notes:
+- Block One looks like the kind of text you'd see in a URL or an email
+  attachment — but that's just the outer wrapper.
+- Block Two didn't yield to a straight substitution guess. Whoever sent it
+  used a repeating key. The defense team's go-to keyword for anything
+  "protective" is a good first guess.

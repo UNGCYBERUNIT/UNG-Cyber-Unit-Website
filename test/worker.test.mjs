@@ -930,8 +930,11 @@ describe('challengeCard / challengesHubCards', () => {
   });
 
   test('CHALLENGE_PARTS should be derived from ctfModules, not hand-kept separately', () => {
+    // Legacy modules' parts are plain id strings; new-style modules' parts
+    // are objects — CHALLENGE_PARTS normalizes both to a flat id array.
     for (const m of ctfModules) {
-      assert.deepEqual(CHALLENGE_PARTS[m.id], m.parts);
+      const expectedIds = m.parts.map(p => (typeof p === 'string' ? p : p.id));
+      assert.deepEqual(CHALLENGE_PARTS[m.id], expectedIds);
     }
   });
 
@@ -1010,6 +1013,9 @@ describe('GET /robots.txt', () => {
     assert.match(body, /Sitemap: https:\/\/ungcyberunit\.org\/sitemap\.xml/);
     assert.doesNotMatch(body, /\/admin|\/instructor|\/profile/); // don't advertise private pages
     assert.match(body, /Disallow: \/cheatsheets\//); // raw PDF path stays out of the index
+    assert.match(body, /Disallow: \/challenges\/\*\//); // raw challenge asset files stay out of the index
+    // The wildcard must not swallow the canonical hub or a module page.
+    assert.doesNotMatch(body, /Disallow: \/challenges\/$/m);
   });
 });
 
@@ -2879,6 +2885,49 @@ describe('Static/simple pages', () => {
     const body = await res.text();
     for (const m of ctfModules) {
       assert.ok(body.includes(m.pageUrl), `hub links to module ${m.id}`);
+    }
+  });
+});
+
+describe('GET /challenges/:id (generic module page)', () => {
+  test('should 404 for an unknown id', async () => {
+    const res = await worker.fetch(new Request('https://example.com/challenges/nope'), { ASSETS: mockAssets() });
+    assert.equal(res.status, 404);
+  });
+
+  test('should 404 for a legacy module id requested at the new-style path', async () => {
+    // log-analysis-regex's canonical URL is /log-analysis-challenge, not
+    // /challenges/log-analysis-regex — the latter must not double-serve it.
+    const res = await worker.fetch(new Request('https://example.com/challenges/log-analysis-regex'), { ASSETS: mockAssets() });
+    assert.equal(res.status, 404);
+  });
+
+  test('should server-render a real new-style module\'s content', async () => {
+    const testModule = {
+      id: 'test-crypto', title: 'Test Crypto Module', category: 'Cryptography',
+      difficulty: 'Intermediate', icon: '🔐', pageUrl: '/challenges/test-crypto',
+      shortDesc: 'A test module.',
+      downloads: [{ filename: 'layers.txt', label: 'Encoded Message', desc: 'The puzzle file.' }],
+      toolbox: [{ name: 'CyberChef', desc: 'Swiss-army knife for encodings.' }],
+      briefing: { sections: [{ heading: 'Briefing', body: 'Decode the message.' }] },
+      parts: [{ id: 'layer-1', title: 'Peel the first layer', difficulty: 'easy', desc: 'Start here.' }],
+      ethicsNotice: false,
+    };
+    ctfModules.push(testModule);
+    try {
+      const res = await worker.fetch(new Request('https://example.com/challenges/test-crypto'), { ASSETS: mockAssets() });
+      assert.equal(res.status, 200);
+      assert.match(res.headers.get('Content-Type'), /text\/html/);
+      const body = await res.text();
+      assert.match(body, /Test Crypto Module/);
+      assert.match(body, /layers\.txt/);
+      assert.match(body, /CyberChef/);
+      assert.match(body, /Peel the first layer/);
+      assert.match(body, /data-challenge-id="test-crypto"/);
+      assert.match(body, /data-part-id="layer-1"/);
+      assert.doesNotMatch(body, /\{\{.*\}\}/);
+    } finally {
+      ctfModules.pop();
     }
   });
 });

@@ -1604,7 +1604,164 @@ const ctfModules = [
     pageUrl: '/network-traffic-challenge',
     parts: ['live-demo'],
   },
+  {
+    id: 'crypto-layers',
+    title: 'Layers of Secrecy',
+    category: 'Cryptography',
+    difficulty: 'Intermediate',
+    icon: '🔐',
+    shortDesc: 'Peel back two independently-encoded blocks from an intercepted transmission.',
+    pageUrl: '/challenges/crypto-layers',
+    downloads: [
+      { filename: 'layers.txt', label: 'Intercepted Transmission', desc: 'Both encoded blocks, plus analyst notes' },
+    ],
+    toolbox: [
+      { name: 'CyberChef', desc: 'Drag-and-drop encode/decode recipes — From Base64, ROT13 Brute Force, Vigenère Decode.' },
+      { name: 'base64 (CLI)', desc: '`base64 -d` decodes a Base64 block from the command line.' },
+      { name: 'Vigenère cipher', desc: 'A repeating-key substitution cipher — same key length as the alphabet shift pattern repeats.' },
+    ],
+    briefing: {
+      sections: [
+        {
+          heading: 'Situation',
+          body: 'A two-block transmission was intercepted off an open relay. Each block was encoded independently, and neither uses an exotic format — just text transformations you can reverse by hand or with a tool.',
+        },
+      ],
+    },
+    parts: [
+      {
+        id: 'layer-1',
+        title: 'Unwrap Block One',
+        difficulty: 'easy',
+        desc: 'Block One has two layers: an outer wrapper you\'ll recognize instantly, and an inner substitution cipher that shifts every letter by the same fixed amount.',
+        targetFile: 'layers.txt (Block One)',
+      },
+      {
+        id: 'layer-2',
+        title: 'Break Block Two',
+        difficulty: 'medium',
+        desc: 'Block Two resists a straight single-shift guess — it\'s a repeating-key cipher. The analyst notes hint at the keyword.',
+        targetFile: 'layers.txt (Block Two)',
+      },
+    ],
+    ethicsNotice: false,
+  },
 ];
+
+// SEO meta block for a generic (new-style) CTF module page, same shape as
+// topicMetaTags() — see that function for the escaping/breadcrumb rationale.
+function challengeModuleMetaTags(m) {
+  const title = escapeHtml(`${m.title} — UNG Cyber Unit`);
+  const desc = escapeHtml(`${m.shortDesc} A CTF-style cybersecurity challenge from the UNG Cyber Unit.`);
+  const canonical = `https://ungcyberunit.org${m.pageUrl}`;
+  const image = 'https://ungcyberunit.org/images/CyberUnitLogo_Transparent.png';
+  const breadcrumb = JSON.stringify({
+    '@context': 'https://schema.org',
+    '@type': 'BreadcrumbList',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: 'Home', item: 'https://ungcyberunit.org/' },
+      { '@type': 'ListItem', position: 2, name: 'CTF Challenges', item: 'https://ungcyberunit.org/challenges' },
+      { '@type': 'ListItem', position: 3, name: m.title, item: canonical },
+    ],
+  }).replace(/</g, '\\u003c');
+  return [
+    `<title>${title}</title>`,
+    `<meta name="description" content="${desc}">`,
+    `<link rel="canonical" href="${canonical}">`,
+    `<meta property="og:type" content="article">`,
+    `<meta property="og:site_name" content="UNG Cyber Unit">`,
+    `<meta property="og:title" content="${title}">`,
+    `<meta property="og:description" content="${desc}">`,
+    `<meta property="og:url" content="${canonical}">`,
+    `<meta property="og:image" content="${image}">`,
+    `<meta name="twitter:card" content="summary">`,
+    `<script type="application/ld+json">${breadcrumb}</script>`,
+  ].join('\n  ');
+}
+
+// Full server-rendered body content for a generic CTF module page — briefing,
+// downloads, toolbox, challenge parts, optional ethics notice. Injected into
+// public/challenge-module.html's placeholder by the /challenges/:id route.
+// No client re-render needed (unlike topics): this content is fully static
+// per module, main.js only layers on progress/submit behavior afterward.
+function renderChallengeModule(m) {
+  const downloads = (m.downloads ?? []).map(d => `
+          <a class="card lac-download-card" href="/challenges/${m.id}/${d.filename}" download>
+            <span class="lac-download-icon" aria-hidden="true">${d.icon ?? '📁'}</span>
+            <span class="lac-download-name">${escapeHtml(d.label)}</span>
+            <span class="lac-download-desc">${escapeHtml(d.desc)}</span>
+          </a>`).join('');
+
+  const toolbox = (m.toolbox ?? []).map(t => `
+          <div class="card lac-tool">
+            <span class="lac-tool-name">${escapeHtml(t.name)}</span>
+            <span class="lac-tool-desc">${escapeHtml(t.desc)}</span>
+          </div>`).join('');
+
+  const briefingHtml = (m.briefing?.sections ?? []).map(s => `
+        <h2 class="instructor-section-heading">// ${escapeHtml(s.heading)}</h2>
+        <p style="color: var(--text-muted); font-size: 0.9rem; margin: 0.5rem 0 1.5rem;">${escapeHtml(s.body)}</p>`).join('');
+
+  const ethics = m.ethicsNotice ? `
+      <div class="card lac-ethics" style="margin-bottom: 2rem;">
+        <strong>Stay in scope.</strong> Every artifact here is synthetic — built for this
+        challenge, not captured from a real system. Apply the same techniques
+        only against systems you own or are explicitly authorized to test.
+      </div>` : '';
+
+  const parts = (m.parts ?? []).map((p, i) => `
+        <div class="card lac-challenge" data-part-id="${escapeHtml(p.id)}">
+          <div class="lac-challenge-head">
+            <span class="lac-challenge-num">${String(i + 1).padStart(2, '0')}</span>
+            <span class="lac-difficulty lac-difficulty--${escapeHtml(p.difficulty ?? 'easy')}">${escapeHtml((p.difficulty ?? 'easy').replace('-', ' '))}</span>
+          </div>
+          <h3 class="lac-challenge-title">${escapeHtml(p.title)}</h3>
+          <p class="lac-challenge-desc">${escapeHtml(p.desc)}</p>
+          ${p.targetFile ? `<span class="lac-target-file"><span class="lac-target-label">Target file:</span> <span class="lac-target-name">${escapeHtml(p.targetFile)}</span></span>` : ''}
+          <div class="lac-submit">
+            <form class="lac-answer-form">
+              <input type="text" class="lac-answer-input" placeholder="Your flag" aria-label="Your answer" autocomplete="off" maxlength="200">
+              <button type="submit" class="btn btn-sm">Submit</button>
+            </form>
+            <p class="lac-answer-feedback" hidden></p>
+          </div>
+        </div>`).join('');
+
+  return `
+      <header style="margin-bottom: 1.5rem;">
+        <h1>// ${escapeHtml(m.title)}</h1>
+        <p style="color: var(--text-muted); font-family: 'Share Tech Mono', monospace; font-size: 0.85rem; margin: 0.4rem 0 0;">
+          ${escapeHtml(m.shortDesc ?? '')}
+        </p>
+      </header>
+
+      ${ethics}
+
+      <section class="instructor-section">
+        <h2 class="instructor-section-heading">// Download</h2>
+        <div class="lac-downloads">${downloads}</div>
+      </section>
+
+      <section class="instructor-section">
+        <h2 class="instructor-section-heading">// Your Toolbox</h2>
+        <div class="lac-toolbox">${toolbox}</div>
+      </section>
+
+      ${briefingHtml ? `<section class="instructor-section">${briefingHtml}</section>` : ''}
+
+      <section class="instructor-section">
+        <h2 class="instructor-section-heading">// The Challenge${(m.parts?.length ?? 0) > 1 ? 's' : ''}</h2>
+        <p style="color: var(--text-muted); font-size: 0.9rem; margin: 0.5rem 0 1rem;">
+          <span id="challengeProgressSummary" class="lac-progress-summary" hidden></span>
+        </p>
+        ${parts}
+      </section>
+
+      <section class="instructor-section" id="answerKeySection" hidden>
+        <h2 class="instructor-section-heading">// Instructor Answer Key</h2>
+        <a class="btn btn-sm" href="/api/challenges/${m.id}/answer-key">Download Answer Key</a>
+      </section>`;
+}
 
 // A single CTF module card for the /challenges hub grid — same visual
 // language as topicCard()'s "module" cards, linking out to wherever the
@@ -1633,7 +1790,12 @@ function challengesHubCards() {
 // Structure only (which part ids exist per challenge) — safe to be public,
 // no answers live here. See schema.sql's challenge_answers table for those.
 // Derived from ctfModules so the two can never drift out of sync.
-const CHALLENGE_PARTS = Object.fromEntries(ctfModules.map(m => [m.id, m.parts]));
+// Legacy modules' `parts` are plain id strings; new-style modules' `parts`
+// are objects ({id, title, difficulty, desc, ...}) since the renderer needs
+// more than just the id — normalize both to a flat id array here.
+const CHALLENGE_PARTS = Object.fromEntries(
+  ctfModules.map(m => [m.id, m.parts.map(p => (typeof p === 'string' ? p : p.id))])
+);
 
 const MAX_ANSWER_SUBMIT_LEN = 200;
 
@@ -1885,6 +2047,8 @@ export {
   CHALLENGE_PARTS,
   challengeCard,
   challengesHubCards,
+  challengeModuleMetaTags,
+  renderChallengeModule,
 };
 
 // ─── Worker Entry Point ───────────────────────────────────────────────────────
@@ -3899,13 +4063,12 @@ export default {
         // carry a <link rel="canonical">). Keep crawlers off the raw file.
         'Disallow: /Cyber_Unit_SOP.pdf',
         // Downloadable workshop assets (zip/pdf/pptx/pcapng) under
-        // public/challenges/<id>/ — not standalone content pages worth
-        // indexing. NOTE: this trailing-slash rule does NOT match the
-        // canonical /challenges hub page (no trailing slash) — but if a
-        // future generic /challenges/:id module page ships (see
-        // docs/plan-intermediate-track.md), it WOULD collide with this rule
-        // and get wrongly deindexed. Revisit this line before shipping one.
-        'Disallow: /challenges/',
+        // public/challenges/<id>/<file> — not standalone content pages worth
+        // indexing. Wildcard requires a *further* "/" after the module id,
+        // so it matches asset paths (.../<id>/<file>) but not the canonical
+        // hub (/challenges) or a generic module page (/challenges/<id>)
+        // itself — both of those should stay indexed.
+        'Disallow: /challenges/*/',
         // Same reasoning as the SOP PDF above — the raw per-topic cheat-sheet
         // files are reachable at their static path but only the canonical
         // /cheatsheet/:id route should be indexed.
@@ -3922,7 +4085,10 @@ export default {
     // Generated from the topics list so it stays in sync as topics are added.
     if (path === '/sitemap.xml') {
       const base = 'https://ungcyberunit.org';
-      const paths = ['/', '/start', '/about', '/resources', '/sop', '/log-analysis-challenge', '/network-traffic-challenge', '/challenges', '/announcements', '/events', ...topics.map(t => `/topic/${t.id}`)];
+      // New-style module URLs (/challenges/:id) derive from ctfModules so a
+      // future module doesn't need a manual sitemap addition; the two
+      // legacy pages stay hardcoded like every other one-off page here.
+      const paths = ['/', '/start', '/about', '/resources', '/sop', '/log-analysis-challenge', '/network-traffic-challenge', '/challenges', '/announcements', '/events', ...topics.map(t => `/topic/${t.id}`), ...ctfModules.filter(m => m.pageUrl.startsWith('/challenges/')).map(m => m.pageUrl)];
       const body = `<?xml version="1.0" encoding="UTF-8"?>\n`
         + `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n`
         + paths.map(p => `  <url><loc>${base}${p}</loc></url>`).join('\n')
@@ -4101,6 +4267,10 @@ export default {
     // well-formed code serves the same page. Optional trailing slash so a human
     // who fat-fingers `/verify/<code>/` still lands on the trust page, not a 404.
     const verifyPageMatch = path.match(/^\/verify\/[a-zA-Z0-9]+\/?$/);
+    // challenges/:id — a generic (new-style) CTF module page. Legacy
+    // modules' ids resolve via their own pageUrl (viewRoutes above), not
+    // this path, so requesting a legacy id here falls through to 404 below.
+    const challengeModulePageMatch = path.match(/^\/challenges\/([\w-]+)$/);
 
     let assetPath = null;
     if (viewRoutes[path] !== undefined) {
@@ -4113,6 +4283,8 @@ export default {
       assetPath = '/u';
     } else if (verifyPageMatch) {
       assetPath = '/verify';
+    } else if (challengeModulePageMatch) {
+      assetPath = '/challenge-module';
     } else if (path === '/sop') {
       assetPath = '/Cyber_Unit_SOP.pdf';
     } else if (path === '/feedback') {
@@ -4192,6 +4364,21 @@ export default {
           if (path === '/start') {
             const html = (await assetResponse.text())
               .replace('<!-- PATHWAY -->', pathwayHtml());
+            headers.delete('Content-Length');
+            headers.set('Content-Type', 'text/html; charset=utf-8');
+            return new Response(html, { status: assetResponse.status, headers });
+          }
+
+          // Server-render a generic CTF module page. An id that doesn't
+          // exist, or that belongs to a legacy module (whose canonical URL
+          // is elsewhere), 404s rather than serving an empty/wrong shell.
+          if (challengeModulePageMatch) {
+            const m = ctfModules.find(x => x.id === challengeModulePageMatch[1]);
+            if (!m || m.pageUrl !== path) return notFoundResponse();
+            const html = (await assetResponse.text())
+              .replace('<title>CyberUnit @ UNG — Challenge</title>', challengeModuleMetaTags(m))
+              .replace('data-challenge-id=""', `data-challenge-id="${m.id}"`)
+              .replace('<!-- CHALLENGE_MODULE_CONTENT -->', renderChallengeModule(m));
             headers.delete('Content-Length');
             headers.set('Content-Type', 'text/html; charset=utf-8');
             return new Response(html, { status: assetResponse.status, headers });

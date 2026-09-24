@@ -3826,5 +3826,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     initChallengeSubmissions('wireshark-nta');
   } else if (window.location.pathname === '/challenges') {
     initChallengesHub();
+  } else if (/^\/challenges\/[\w-]+$/.test(window.location.pathname)) {
+    // Generic module page — the challenge id is server-injected into
+    // <body data-challenge-id>, so this one branch covers every new-style
+    // module instead of needing an else-if per module like the two legacy
+    // pages above.
+    const challengeId = document.body.dataset.challengeId;
+    if (challengeId) {
+      initChallengeAnswerKeyToggle();
+      initChallengeSubmissions(challengeId);
+    }
   }
 });
