@@ -68,7 +68,15 @@ function mockDB() {
   const exec = (sql, bindings) => ({
     sql, bindings,
     run:   async () => { calls.push({ sql, bindings, op: 'run' });   return { meta: { last_row_id: 1, changes: 1 } }; },
-    first: async () => { calls.push({ sql, bindings, op: 'first' }); return null; },
+    first: async () => {
+      calls.push({ sql, bindings, op: 'first' });
+      // getSession()'s revocation check — every sessionCookieFor() token in
+      // this file has no `ver` claim (defaults to 0), so answering with
+      // token_version 0 here keeps every existing authenticated test
+      // working without each one needing to know about session revocation.
+      if (/SELECT token_version FROM users WHERE id = \?/.test(sql)) return { token_version: 0 };
+      return null;
+    },
     all:   async () => { calls.push({ sql, bindings, op: 'all' });   return { results: [] }; },
   });
   return {
@@ -116,6 +124,7 @@ function mockPublicProfileDB(usersByUsername) {
       return {
         bind: (...bindings) => ({
           first: async () => {
+            if (/SELECT token_version FROM users WHERE id = \?/.test(sql)) return { token_version: 0 };
             if (/FROM users WHERE username = \?/.test(sql)) {
               return usersByUsername[bindings[0]] ?? null;
             }
@@ -152,6 +161,7 @@ function mockMembersDB({ rows = [], total = rows.length } = {}) {
           },
           first: async () => {
             calls.push({ sql, bindings, op: 'first' });
+            if (/SELECT token_version FROM users WHERE id = \?/.test(sql)) return { token_version: 0 };
             if (/COUNT\(\*\) AS total FROM users WHERE is_public = 1/.test(sql)) return { total };
             if (/WHERE user_id = \?/.test(sql)) return { points: 0, count: 0 }; // leaderboardRank -> unranked
             return null;
@@ -169,6 +179,7 @@ function mockMeDB({ lastSeen = null, latestAnnouncement = null } = {}) {
   return {
     prepare(sql) {
       const first = async () => {
+        if (/SELECT token_version FROM users WHERE id = \?/.test(sql)) return { token_version: 0 };
         if (/SELECT avatar, last_seen_announcements/.test(sql)) return { avatar: null, last_seen_announcements: lastSeen };
         if (/MAX\(created_at\)/.test(sql)) return { latest: latestAnnouncement };
         return null;
@@ -185,6 +196,7 @@ function mockRoleRefreshDB(dbRole) {
   return {
     prepare(sql) {
       const first = async () => {
+        if (/SELECT token_version FROM users WHERE id = \?/.test(sql)) return { token_version: 0 };
         if (/SELECT avatar, last_seen_announcements, role/.test(sql)) return { avatar: null, last_seen_announcements: null, role: dbRole };
         if (/SELECT id, username, role, avatar, created_at, is_public, email, email_pending/.test(sql)) {
           return { id: 1, username: 'alice', role: dbRole, avatar: null, created_at: 1000, is_public: 0, email: null, email_pending: null };
@@ -209,6 +221,7 @@ function mockUpgradeDB({ usernameTaken = false, updateChanges = 1 } = {}) {
         bind: (...bindings) => ({
           first: async () => {
             calls.push({ sql, bindings, op: 'first' });
+            if (/SELECT token_version FROM users WHERE id = \?/.test(sql)) return { token_version: 0 };
             if (/SELECT id FROM users WHERE username = \? AND id != \?/.test(sql)) {
               return usernameTaken ? { id: 999 } : null;
             }
@@ -227,10 +240,9 @@ function mockUpgradeDB({ usernameTaken = false, updateChanges = 1 } = {}) {
 }
 
 async function sessionCookieFor(user) {
-  const token = await signJWT(
-    { sub: user.sub, username: user.username, role: user.role, exp: Math.floor(Date.now() / 1000) + 3600 },
-    SECRET,
-  );
+  const payload = { sub: user.sub, username: user.username, role: user.role, exp: Math.floor(Date.now() / 1000) + 3600 };
+  if (user.ver !== undefined) payload.ver = user.ver; // omitted -> getSession() treats as ver 0, same as a pre-revocation token
+  const token = await signJWT(payload, SECRET);
   return `session=${token}`;
 }
 
@@ -657,7 +669,8 @@ describe('POST /api/profile/avatar', () => {
 
     assert.equal(res.status, 400);
     assert.match((await res.json()).error, /not a valid image/);
-    assert.equal(db.calls.length, 0, 'no DB writes should occur on rejection');
+    // getSession()'s revocation check still reads token_version — only writes are ruled out here.
+    assert.equal(db.calls.filter(c => c.op === 'run').length, 0, 'no DB writes should occur on rejection');
   });
 
   test('should reject an oversized payload (> 150000 chars) without touching the DB', async () => {
@@ -669,7 +682,7 @@ describe('POST /api/profile/avatar', () => {
 
     assert.equal(res.status, 400);
     assert.match((await res.json()).error, /too large/i);
-    assert.equal(db.calls.length, 0);
+    assert.equal(db.calls.filter(c => c.op === 'run').length, 0);
   });
 
   test('should reject a non-string avatar value', async () => {
@@ -679,7 +692,7 @@ describe('POST /api/profile/avatar', () => {
     const res = await worker.fetch(makeReq(12345, cookie), { JWT_SECRET: SECRET, DB: db });
 
     assert.equal(res.status, 400);
-    assert.equal(db.calls.length, 0);
+    assert.equal(db.calls.filter(c => c.op === 'run').length, 0);
   });
 
   test('should reject an unauthenticated request with 401', async () => {
@@ -1240,6 +1253,100 @@ describe('GET /api/auth/me', () => {
   });
 });
 
+// A mock D1 that answers the getSession() revocation check with a fixed
+// token_version for every user id, and nothing else — for exercising
+// revocation itself in isolation from any particular route's other queries.
+function mockTokenVersionDB(tokenVersion) {
+  const calls = [];
+  return {
+    calls,
+    prepare(sql) {
+      return {
+        bind: (...bindings) => ({
+          first: async () => {
+            calls.push({ sql, bindings, op: 'first' });
+            return /SELECT token_version FROM users WHERE id = \?/.test(sql) ? { token_version: tokenVersion } : null;
+          },
+          run: async () => { calls.push({ sql, bindings, op: 'run' }); return { meta: { changes: 1 } }; },
+        }),
+      };
+    },
+  };
+}
+
+describe('Session revocation (token_version)', () => {
+  const get = (cookie, db) => worker.fetch(
+    new Request('https://example.com/api/announcements/seen', { method: 'POST', headers: { Cookie: cookie } }),
+    { JWT_SECRET: SECRET, DB: db },
+  );
+
+  test('should accept a token whose ver claim matches the current token_version', async () => {
+    const cookie = await sessionCookieFor({ sub: 1, username: 'alice', role: 'member', ver: 3 });
+    const res = await get(cookie, mockTokenVersionDB(3));
+    assert.equal(res.status, 200);
+  });
+
+  test('should accept a pre-revocation token with no ver claim when token_version is still 0', async () => {
+    const cookie = await sessionCookieFor({ sub: 1, username: 'alice', role: 'member' });
+    const res = await get(cookie, mockTokenVersionDB(0));
+    assert.equal(res.status, 200);
+  });
+
+  test('should reject a token whose ver claim is stale (401)', async () => {
+    // The exact "session steal" fix: a copied cookie issued before a
+    // password reset or sign-out-everywhere carries the old ver and must
+    // stop working, even though its signature and expiry are still valid.
+    const cookie = await sessionCookieFor({ sub: 1, username: 'alice', role: 'member', ver: 0 });
+    const res = await get(cookie, mockTokenVersionDB(1));
+    assert.equal(res.status, 401);
+  });
+
+  test('should reject any session when the user row no longer exists', async () => {
+    const noSuchUserDB = {
+      prepare: (sql) => ({ bind: () => ({ first: async () => null, run: async () => ({ meta: { changes: 0 } }) }) }),
+    };
+    const cookie = await sessionCookieFor({ sub: 999, username: 'ghost', role: 'member' });
+    const res = await get(cookie, noSuchUserDB);
+    assert.equal(res.status, 401);
+  });
+
+  test('should fail closed (503, route-level DB guard) when env.DB is not configured', async () => {
+    // getSession() itself also fails closed (returns null) when env.DB is
+    // missing, but this route's own "Server not configured" guard runs
+    // first and answers 503 before getSession() is even reached.
+    const cookie = await sessionCookieFor({ sub: 1, username: 'alice', role: 'member' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/announcements/seen', { method: 'POST', headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET },
+    );
+    assert.equal(res.status, 503);
+  });
+});
+
+describe('POST /api/auth/sign-out-everywhere', () => {
+  test('should require a session', async () => {
+    const res = await worker.fetch(
+      new Request('https://example.com/api/auth/sign-out-everywhere', { method: 'POST' }),
+      { JWT_SECRET: SECRET, DB: mockTokenVersionDB(0) },
+    );
+    assert.equal(res.status, 401);
+  });
+
+  test('should bump token_version and clear the session cookie', async () => {
+    const db = mockTokenVersionDB(0);
+    const cookie = await sessionCookieFor({ sub: 1, username: 'alice', role: 'member', ver: 0 });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/auth/sign-out-everywhere', { method: 'POST', headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 200);
+    const bump = db.calls.find(c => c.op === 'run' && /UPDATE users SET token_version = token_version \+ 1/.test(c.sql));
+    assert.ok(bump, 'expected an UPDATE bumping token_version');
+    assert.equal(bump.bindings[0], 1); // session.sub
+    assert.match(res.headers.get('Set-Cookie'), /session=;/);
+  });
+});
+
 describe('POST /api/announcements/seen', () => {
   test('should require a session', async () => {
     const res = await worker.fetch(
@@ -1392,6 +1499,7 @@ function mockDiscordDB(usersByDiscordId, { throwOnUpdate = false } = {}) {
       // directly as `.first/all/run()` on the prepare() result itself.
       const exec = (bindings) => ({
         first: async () => {
+          if (/SELECT token_version FROM users WHERE id = \?/.test(sql)) return { token_version: 0 };
           if (/FROM users WHERE discord_id = \?/.test(sql)) {
             return usersByDiscordId[bindings?.[0]] ?? null;
           }
@@ -1430,19 +1538,19 @@ describe('GET /api/discord/link/start', () => {
 
   test('should reject guests', async () => {
     const cookie = await sessionCookieFor({ sub: 9, username: 'guest-abc', role: 'guest' });
-    const res = await get({ JWT_SECRET: SECRET, DISCORD_CLIENT_ID: 'abc123' }, cookie);
+    const res = await get({ JWT_SECRET: SECRET, DISCORD_CLIENT_ID: 'abc123', DB: mockDB() }, cookie);
     assert.equal(res.status, 403);
   });
 
   test('should 503 when DISCORD_CLIENT_ID is not configured', async () => {
     const cookie = await sessionCookieFor({ sub: 1, username: 'alice', role: 'member' });
-    const res = await get({ JWT_SECRET: SECRET }, cookie);
+    const res = await get({ JWT_SECRET: SECRET, DB: mockDB() }, cookie);
     assert.equal(res.status, 503);
   });
 
   test('should redirect to Discord with the right client_id/scope and a state JWT encoding the caller', async () => {
     const cookie = await sessionCookieFor({ sub: 42, username: 'alice', role: 'member' });
-    const res = await get({ JWT_SECRET: SECRET, DISCORD_CLIENT_ID: 'abc123' }, cookie);
+    const res = await get({ JWT_SECRET: SECRET, DISCORD_CLIENT_ID: 'abc123', DB: mockDB() }, cookie);
     assert.equal(res.status, 302);
     const location = new URL(res.headers.get('Location'));
     assert.equal(location.origin, 'https://discord.com');
@@ -2266,7 +2374,12 @@ describe('DELETE /api/events/:id', () => {
 
   test('should 404 for an unknown id', async () => {
     const db = mockDB();
-    db.prepare = (sql) => ({ bind: (...bindings) => ({ run: async () => ({ meta: { changes: 0 } }) }) });
+    db.prepare = (sql) => ({
+      bind: (...bindings) => ({
+        run: async () => ({ meta: { changes: 0 } }),
+        first: async () => (/SELECT token_version FROM users WHERE id = \?/.test(sql) ? { token_version: 0 } : null),
+      }),
+    });
     const cookie = await sessionCookieFor({ sub: 1, username: 'admin1', role: 'admin' });
     const res = await worker.fetch(
       new Request('https://example.com/api/events/999', { method: 'DELETE', headers: { Cookie: cookie } }),
@@ -2284,7 +2397,10 @@ function mockRoomAnalyticsDB({ room, questions = [], answers = [] }) {
     prepare(sql) {
       return {
         bind: (...bindings) => ({
-          first: async () => (/FROM quiz_rooms WHERE code = \?/.test(sql) ? room : null),
+          first: async () => {
+            if (/SELECT token_version FROM users WHERE id = \?/.test(sql)) return { token_version: 0 };
+            return /FROM quiz_rooms WHERE code = \?/.test(sql) ? room : null;
+          },
           all: async () => {
             if (/FROM quiz_room_questions/.test(sql)) return { results: questions };
             if (/FROM quiz_room_answers/.test(sql)) return { results: answers };
@@ -2378,6 +2494,7 @@ function mockQuestionBankDB({ first = [], all = [] } = {}) {
           sql, bindings,
           first: async () => {
             calls.push({ sql, bindings, op: 'first' });
+            if (/SELECT token_version FROM users WHERE id = \?/.test(sql)) return { token_version: 0 };
             for (const [re, result] of first) if (re.test(sql)) return typeof result === 'function' ? result(bindings) : result;
             return null;
           },
@@ -2672,6 +2789,7 @@ function mockAuditActionDB({ first = [] } = {}) {
           sql, bindings,
           first: async () => {
             calls.push({ sql, bindings, op: 'first' });
+            if (/SELECT token_version FROM users WHERE id = \?/.test(sql)) return { token_version: 0 };
             for (const [re, result] of first) if (re.test(sql)) return result;
             return null;
           },
@@ -2838,7 +2956,12 @@ describe('GET /api/admin/audit-log', () => {
       { id: 2, actor_id: 1, actor_name: 'admin1', action: 'user.role_change', target: 'bob', detail: JSON.stringify([{ field: 'role', before: 'member', after: 'admin' }]), created_at: 2000 },
       { id: 1, actor_id: 1, actor_name: 'admin1', action: 'announcement.create', target: 'Hi', detail: null, created_at: 1000 },
     ];
-    db.prepare = (sql) => ({ bind: (...bindings) => ({ all: async () => ({ results: rows }) }) });
+    db.prepare = (sql) => ({
+      bind: (...bindings) => ({
+        all: async () => ({ results: rows }),
+        first: async () => (/SELECT token_version FROM users WHERE id = \?/.test(sql) ? { token_version: 0 } : null),
+      }),
+    });
     const cookie = await sessionCookieFor({ sub: 1, username: 'admin1', role: 'admin' });
     const res = await worker.fetch(
       new Request('https://example.com/api/admin/audit-log', { headers: { Cookie: cookie } }),
@@ -3117,7 +3240,14 @@ describe('GET /api/challenges/:id/answer-key (instructor-only, D1-backed)', () =
   function mockAnswerKeyDB(row) {
     return {
       prepare(sql) {
-        return { bind: () => ({ first: async () => (/FROM challenge_answer_keys/.test(sql) ? row : null) }) };
+        return {
+          bind: () => ({
+            first: async () => {
+              if (/SELECT token_version FROM users WHERE id = \?/.test(sql)) return { token_version: 0 };
+              return /FROM challenge_answer_keys/.test(sql) ? row : null;
+            },
+          }),
+        };
       },
     };
   }
@@ -3170,6 +3300,7 @@ describe('GET /api/challenges/:id/progress', () => {
             all: async () => (/FROM challenge_completions/.test(sql)
               ? { results: completedParts.map(part_id => ({ part_id })) }
               : { results: [] }),
+            first: async () => (/SELECT token_version FROM users WHERE id = \?/.test(sql) ? { token_version: 0 } : null),
           }),
         };
       },
@@ -3210,6 +3341,7 @@ describe('POST /api/challenges/:id/submit', () => {
         return {
           bind: (...bindings) => ({
             first: async () => {
+              if (/SELECT token_version FROM users WHERE id = \?/.test(sql)) return { token_version: 0 };
               if (/FROM challenge_submit_rate_limit/.test(sql)) return { n: rateLimited ? 999 : 0 };
               if (/FROM challenge_answers/.test(sql)) {
                 calls.push({ sql, bindings });

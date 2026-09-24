@@ -174,6 +174,7 @@ cybersec-basics/
 | `/api/challenges/:id/progress` (GET) | Any session incl. guest — which part ids of a challenge this user has completed (`challenge_completions`); `[]` if signed out |
 | `/api/challenges/:id/submit` (POST) | Any session incl. guest — auto-graded free-text answer submission (`{partId, answer}`). Correct answers live only in D1 (`challenge_answers`), never in worker.js — even a hashed short answer would be offline-crackable once committed to this public repo. Per-user rate-limited on wrong answers (`challenge_submit_rate_limit`); records a completion on a match. |
 | `/api/auth/register`, `/api/auth/login`, `/api/auth/logout`, `/api/auth/me` | Account auth. `/api/auth/me` also reports `hasUnreadAnnouncements` (always `false` for guests) — drives the nav badge. |
+| `/api/auth/sign-out-everywhere` (POST) | Bumps `users.token_version`, instantly invalidating every outstanding session for the caller's account (including the one making the request) — see CLAUDE.md's "Session revocation" section |
 | `/api/auth/guest` (POST) | Create a throwaway guest account (role `guest`, 2-hour session, no password) |
 | `/api/auth/upgrade` (POST) | Guest-only — converts the caller's own guest row into a real account in place (same id; new username/password; role → `member`), so progress carries over with no migration step |
 | `/api/auth/forgot-password`, `/api/auth/forgot-username` (POST) | Unauthenticated account recovery via a verified email on file; always returns a generic success response regardless of whether the email matches (no enumeration) |

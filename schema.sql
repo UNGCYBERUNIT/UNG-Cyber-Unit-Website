@@ -20,7 +20,14 @@ CREATE TABLE IF NOT EXISTS users (
   password_reset_last_sent_at INTEGER,
   discord_id         TEXT,
   discord_username   TEXT,
-  discord_linked_at  INTEGER
+  discord_linked_at  INTEGER,
+  -- Session revocation. Embedded in every issued session JWT as `ver`;
+  -- getSession() rejects a token whose `ver` doesn't match this column.
+  -- Bumped on password reset and POST /api/auth/sign-out-everywhere, so a
+  -- copied/stolen session cookie stops working immediately instead of
+  -- staying valid until its 7-day natural expiry. See CLAUDE.md's "Session
+  -- revocation" section.
+  token_version      INTEGER NOT NULL DEFAULT 0
 );
 
 -- Verified email must uniquely identify one account (not currently tied to

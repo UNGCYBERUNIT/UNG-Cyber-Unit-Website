@@ -1449,9 +1449,22 @@ async function verifyJWT(token, secret) {
   } catch { return null; }
 }
 
-async function getSession(request, secret) {
+// Revocable sessions: after verifying the JWT's signature/expiry, compare
+// its `ver` claim against the user's current token_version in D1. Bumped on
+// password reset and POST /api/auth/sign-out-everywhere, so a copied/stolen
+// cookie stops working the instant either happens — not just at the
+// token's natural 7-day expiry. See CLAUDE.md's "Session revocation"
+// section for the full rationale (this used to be a purely stateless JWT
+// check with no DB read at all; that's a deliberate trade-off reversal).
+async function getSession(request, env) {
   const cookies = parseCookies(request.headers.get('Cookie'));
-  return cookies.session ? verifyJWT(cookies.session, secret) : null;
+  if (!cookies.session) return null;
+  const payload = await verifyJWT(cookies.session, env.JWT_SECRET);
+  if (!payload) return null;
+  if (!env.DB) return null; // can't verify revocation without DB — fail closed
+  const row = await env.DB.prepare('SELECT token_version FROM users WHERE id = ?').bind(payload.sub).first();
+  if (!row || (row.token_version ?? 0) !== (payload.ver ?? 0)) return null;
+  return payload;
 }
 
 function sessionCookie(token, maxAge, secure = true) {
@@ -1482,7 +1495,7 @@ async function refreshRoleIfStale(env, session, dbRole, secure = true) {
   // upgrade. Keep it pinned at guest until it naturally expires.
   if (session.role === 'guest') return { role: 'guest', cookie: null };
   const token = await signJWT(
-    { sub: session.sub, username: session.username, role: dbRole, exp: Math.floor(Date.now() / 1000) + 7 * 24 * 3600 },
+    { sub: session.sub, username: session.username, role: dbRole, ver: session.ver ?? 0, exp: Math.floor(Date.now() / 1000) + 7 * 24 * 3600 },
     env.JWT_SECRET
   );
   return { role: dbRole, cookie: sessionCookie(token, 7 * 24 * 3600, secure) };
@@ -1493,7 +1506,7 @@ async function refreshRoleIfStale(env, session, dbRole, secure = true) {
 const ROLE_RANK = { guest: -1, member: 0, student: 1, instructor: 2, admin: 3 };
 
 async function requireRole(request, env, minRole) {
-  const session = await getSession(request, env.JWT_SECRET);
+  const session = await getSession(request, env);
   if (!session) return jsonResponse({ error: 'Not authenticated' }, 401);
   if ((ROLE_RANK[session.role] ?? 0) < (ROLE_RANK[minRole] ?? 0)) {
     return jsonResponse({ error: 'Forbidden' }, 403);
@@ -2274,7 +2287,7 @@ export default {
         ).bind(username, hash, Date.now()).run();
 
         const token = await signJWT(
-          { sub: result.meta.last_row_id, username, role: 'member', exp: Math.floor(Date.now() / 1000) + 7 * 24 * 3600 },
+          { sub: result.meta.last_row_id, username, role: 'member', ver: 0, exp: Math.floor(Date.now() / 1000) + 7 * 24 * 3600 },
           env.JWT_SECRET
         );
         await recordSignup(env, request);
@@ -2290,7 +2303,7 @@ export default {
         if (!username || !password) return jsonResponse({ error: 'Username and password required' }, 400);
 
         const user = await env.DB.prepare(
-          'SELECT id, username, password_hash, role FROM users WHERE username = ?'
+          'SELECT id, username, password_hash, role, token_version FROM users WHERE username = ?'
         ).bind(username).first();
         const valid = user && await verifyPassword(String(password), user.password_hash);
         // Always return the same error to prevent username enumeration
@@ -2298,7 +2311,7 @@ export default {
 
         const role = user.role ?? 'member';
         const token = await signJWT(
-          { sub: user.id, username: user.username, role, exp: Math.floor(Date.now() / 1000) + 7 * 24 * 3600 },
+          { sub: user.id, username: user.username, role, ver: user.token_version ?? 0, exp: Math.floor(Date.now() / 1000) + 7 * 24 * 3600 },
           env.JWT_SECRET
         );
         return jsonResponse({ id: user.id, username: user.username, role }, 200, { 'Set-Cookie': sessionCookie(token, 7 * 24 * 3600, secureCookie) });
@@ -2306,6 +2319,23 @@ export default {
 
       // POST /api/auth/logout
       if (path === '/api/auth/logout' && request.method === 'POST') {
+        return jsonResponse({ ok: true }, 200, { 'Set-Cookie': sessionCookie('', 0, secureCookie) });
+      }
+
+      // POST /api/auth/sign-out-everywhere — self-service session revocation.
+      // Bumps token_version, instantly invalidating every outstanding JWT for
+      // this account (including the one making this very request) — the
+      // deliberate response to "I think my session cookie got copied
+      // somewhere" (shared computer, a friend's browser, etc.), since there's
+      // no way to tell which specific outstanding token is the stolen copy
+      // and which is legitimate. Also clears the current cookie so this
+      // browser prompts a fresh login immediately rather than failing on its
+      // next request. See CLAUDE.md's "Session revocation" section.
+      if (path === '/api/auth/sign-out-everywhere' && request.method === 'POST') {
+        if (!env.DB) return jsonResponse({ error: 'Server not configured' }, 503);
+        const session = await getSession(request, env);
+        if (!session) return jsonResponse({ error: 'Not authenticated' }, 401);
+        await env.DB.prepare('UPDATE users SET token_version = token_version + 1 WHERE id = ?').bind(session.sub).run();
         return jsonResponse({ ok: true }, 200, { 'Set-Cookie': sessionCookie('', 0, secureCookie) });
       }
 
@@ -2327,7 +2357,7 @@ export default {
         ).bind(username, hash, Date.now()).run();
 
         const token = await signJWT(
-          { sub: result.meta.last_row_id, username, role: 'guest', exp: Math.floor(Date.now() / 1000) + GUEST_SESSION_SECONDS },
+          { sub: result.meta.last_row_id, username, role: 'guest', ver: 0, exp: Math.floor(Date.now() / 1000) + GUEST_SESSION_SECONDS },
           env.JWT_SECRET
         );
         await recordSignup(env, request);
@@ -2343,7 +2373,7 @@ export default {
       // streak carry over automatically with no separate data-migration step.
       if (path === '/api/auth/upgrade' && request.method === 'POST') {
         if (!env.DB) return jsonResponse({ error: 'Database not configured' }, 503);
-        const session = await getSession(request, env.JWT_SECRET);
+        const session = await getSession(request, env);
         if (!session) return jsonResponse({ error: 'Not authenticated' }, 401);
         if (session.role !== 'guest') return jsonResponse({ error: 'Only guest accounts can be upgraded' }, 403);
 
@@ -2368,7 +2398,7 @@ export default {
         if (info.meta.changes === 0) return jsonResponse({ error: 'Guest session no longer valid' }, 409);
 
         const token = await signJWT(
-          { sub: session.sub, username, role: 'member', exp: Math.floor(Date.now() / 1000) + 7 * 24 * 3600 },
+          { sub: session.sub, username, role: 'member', ver: session.ver ?? 0, exp: Math.floor(Date.now() / 1000) + 7 * 24 * 3600 },
           env.JWT_SECRET
         );
         await recordSignup(env, request);
@@ -2377,7 +2407,7 @@ export default {
 
       // GET /api/auth/me
       if (path === '/api/auth/me' && request.method === 'GET') {
-        const session = await getSession(request, env.JWT_SECRET);
+        const session = await getSession(request, env);
         if (!session) return jsonResponse({ error: 'Not authenticated' }, 401);
         let avatar = null;
         let hasUnreadAnnouncements = false;
@@ -2636,12 +2666,20 @@ export default {
         }
 
         const hash = await hashPassword(password);
-        await env.DB.prepare(`
-          UPDATE users SET password_hash = ?, password_reset_token_hash = NULL, password_reset_expires_at = NULL WHERE id = ?
-        `).bind(hash, match.id).run();
+        // Bumping token_version here invalidates every previously-issued
+        // session for this account the instant a password reset completes —
+        // the whole point of a reset is "I think someone else has access,"
+        // so any copied/stolen cookie from before this moment must stop
+        // working too, not just log the resetter back in. See
+        // CLAUDE.md's "Session revocation" section.
+        const updated = await env.DB.prepare(`
+          UPDATE users SET password_hash = ?, token_version = token_version + 1,
+            password_reset_token_hash = NULL, password_reset_expires_at = NULL
+          WHERE id = ? RETURNING token_version
+        `).bind(hash, match.id).first();
 
         const sessionToken = await signJWT(
-          { sub: match.id, username: match.username, role: match.role ?? 'member', exp: Math.floor(Date.now() / 1000) + 7 * 24 * 3600 },
+          { sub: match.id, username: match.username, role: match.role ?? 'member', ver: updated?.token_version ?? 0, exp: Math.floor(Date.now() / 1000) + 7 * 24 * 3600 },
           env.JWT_SECRET
         );
         return new Response(null, {
@@ -2689,7 +2727,7 @@ export default {
       // GET /api/progress  — returns [] if not authenticated (graceful for logged-out users)
       if (path === '/api/progress' && request.method === 'GET') {
         if (!env.DB) return jsonResponse({ results: [] });
-        const session = await getSession(request, env.JWT_SECRET);
+        const session = await getSession(request, env);
         if (!session) return jsonResponse({ results: [] });
         const { results } = await env.DB.prepare(
           'SELECT topic_id, score, total FROM quiz_results WHERE user_id = ?'
@@ -2705,7 +2743,7 @@ export default {
       const progressMatch = path.match(/^\/api\/progress\/(\w+)$/);
       if (progressMatch && request.method === 'DELETE') {
         if (!env.DB) return jsonResponse({ error: 'Database not configured' }, 503);
-        const session = await getSession(request, env.JWT_SECRET);
+        const session = await getSession(request, env);
         if (!session) return jsonResponse({ error: 'Not authenticated' }, 401);
         await env.DB.prepare(
           'DELETE FROM quiz_results WHERE user_id = ? AND topic_id = ?'
@@ -2716,7 +2754,7 @@ export default {
       // POST /api/progress/:topicId
       if (progressMatch && request.method === 'POST') {
         if (!env.DB) return jsonResponse({ error: 'Database not configured' }, 503);
-        const session = await getSession(request, env.JWT_SECRET);
+        const session = await getSession(request, env);
         if (!session) return jsonResponse({ error: 'Not authenticated' }, 401);
         let body;
         try { body = await request.json(); } catch { return jsonResponse({ error: 'Invalid request body' }, 400); }
@@ -2759,7 +2797,7 @@ export default {
     // GET /api/profile — account details + quiz room attempt history
     if (path === '/api/profile' && request.method === 'GET') {
       if (!env.JWT_SECRET || !env.DB) return jsonResponse({ error: 'Server not configured' }, 503);
-      const session = await getSession(request, env.JWT_SECRET);
+      const session = await getSession(request, env);
       if (!session) return jsonResponse({ error: 'Not authenticated' }, 401);
 
       const user = await env.DB.prepare(
@@ -2813,7 +2851,7 @@ export default {
     // view this profile at /u/:username. Mutates only the caller's own row.
     if (path === '/api/profile/visibility' && request.method === 'POST') {
       if (!env.JWT_SECRET || !env.DB) return jsonResponse({ error: 'Server not configured' }, 503);
-      const session = await getSession(request, env.JWT_SECRET);
+      const session = await getSession(request, env);
       if (!session) return jsonResponse({ error: 'Not authenticated' }, 401);
       if (session.role === 'guest') return jsonResponse({ error: 'Guests cannot have a public profile' }, 403);
 
@@ -3004,7 +3042,7 @@ export default {
         'SELECT id, username, role, avatar, created_at, is_public FROM users WHERE username = ?'
       ).bind(publicUserMatch[1]).first();
       if (!target || target.role === 'guest') return jsonResponse({ error: 'User not found' }, 404);
-      const viewer = env.JWT_SECRET ? await getSession(request, env.JWT_SECRET) : null;
+      const viewer = await getSession(request, env);
       if (!target.is_public && viewer?.role !== 'admin') return jsonResponse({ error: 'This profile is private' }, 403);
 
       const { results: prog } = await env.DB.prepare(
@@ -3080,7 +3118,7 @@ export default {
     // by topic-quiz points, "rooms" by quiz-room points. Guests are excluded.
     if (path === '/api/leaderboard' && request.method === 'GET') {
       if (!env.JWT_SECRET || !env.DB) return jsonResponse({ error: 'Server not configured' }, 503);
-      const session = await getSession(request, env.JWT_SECRET);
+      const session = await getSession(request, env);
       if (!session) return jsonResponse({ error: 'Not authenticated' }, 401);
 
       const mode = url.searchParams.get('mode') === 'rooms' ? 'rooms' : 'modules';
@@ -3125,7 +3163,7 @@ export default {
     // DELETE /api/profile/avatar — reset to default
     if (path === '/api/profile/avatar' && (request.method === 'POST' || request.method === 'DELETE')) {
       if (!env.JWT_SECRET || !env.DB) return jsonResponse({ error: 'Server not configured' }, 503);
-      const session = await getSession(request, env.JWT_SECRET);
+      const session = await getSession(request, env);
       if (!session) return jsonResponse({ error: 'Not authenticated' }, 401);
 
       if (request.method === 'DELETE') {
@@ -3445,7 +3483,7 @@ export default {
         if (!message) return jsonResponse({ error: 'Message is required' }, 400);
         if (message.length > 5000) return jsonResponse({ error: 'Message must be 5000 characters or fewer' }, 400);
 
-        const session = env.JWT_SECRET ? await getSession(request, env.JWT_SECRET) : null;
+        const session = await getSession(request, env);
         const username = session?.username ?? null;
 
         const now = Date.now();
@@ -4341,7 +4379,7 @@ export default {
     const progressChallengeMatch = path.match(/^\/api\/challenges\/([a-z0-9-]+)\/progress$/);
     if (progressChallengeMatch && request.method === 'GET') {
       if (!env.DB) return jsonResponse({ completed: [] });
-      const session = await getSession(request, env.JWT_SECRET);
+      const session = await getSession(request, env);
       if (!session) return jsonResponse({ completed: [] });
       const { results } = await env.DB.prepare(
         'SELECT part_id FROM challenge_completions WHERE user_id = ? AND challenge_id = ?'
@@ -4356,7 +4394,7 @@ export default {
     const submitChallengeMatch = path.match(/^\/api\/challenges\/([a-z0-9-]+)\/submit$/);
     if (submitChallengeMatch && request.method === 'POST') {
       if (!env.DB) return jsonResponse({ error: 'Server not configured' }, 503);
-      const session = await getSession(request, env.JWT_SECRET);
+      const session = await getSession(request, env);
       if (!session) return jsonResponse({ error: 'Not authenticated' }, 401);
 
       const challengeId = submitChallengeMatch[1];

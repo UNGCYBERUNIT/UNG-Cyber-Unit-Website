@@ -150,6 +150,31 @@ Role lives in the session JWT, not re-checked against the DB per request —
 the cookie's (e.g. after an admin promotes someone), so the browser doesn't need a
 log-out/in to pick it up.
 
+**Session revocation (`token_version`):** this reverses the statement just above — sessions
+are no longer *purely* stateless. `users.token_version` (schema.sql) is embedded in every
+issued session JWT as the `ver` claim, and `getSession()` in worker.js now does one extra D1
+read per authenticated request — `SELECT token_version FROM users WHERE id = ?` — comparing
+it against the token's `ver` before accepting the session; a mismatch (or a missing user row)
+rejects the token outright, even though its signature and expiry are still valid. This closes
+the "session stealing" gap a stateless JWT can't otherwise close: HttpOnly/SameSite=Strict/
+Secure cookie flags stop *remote* theft (XSS, network sniffing), but none of them can stop
+*replay* of a raw cookie value that was somehow already copied out (shared computer, a
+screen-shared terminal, etc.) — a stolen cookie used to stay valid until its natural 7-day
+expiry no matter what. Two things bump `token_version`, invalidating every other outstanding
+token for that account immediately: `POST /api/auth/reset-password` (the whole point of a
+reset is "someone else may have access") and the self-service `POST
+/api/auth/sign-out-everywhere` (bumps and also clears the calling browser's own cookie, since
+there's no way to tell which outstanding token is the stolen copy and which is legitimate).
+Every other `signJWT()` call site (register, login, guest, upgrade, `refreshRoleIfStale`) sets
+`ver` to the row's current `token_version` (or `0` for a brand-new row) — never a bump. The
+column defaults to `0` and pre-migration JWTs have no `ver` claim at all, so `payload.ver ?? 0`
+naturally matches the default for every already-logged-in user — the migration itself doesn't
+force a mass logout. `getSession()` fails closed (`null`) when `env.DB` is unset, same as
+every other DB-dependent auth path in this app. The accepted trade-off is one extra D1 read
+per authenticated request in exchange for actual revocation capability — deliberately chosen
+over the cheaper "do nothing, let stolen cookies expire naturally" and "short-lived-JWT +
+refresh-token" alternatives.
+
 **GET-renders/POST-mutates for emailed links:** any single-use link clicked directly out of
 an email (`/api/auth/verify-email/confirm`, `/api/auth/reset-password`) must **never mutate
 state on `GET`** — only render a page with a plain `<form method="POST">` (no JS, so no CSP

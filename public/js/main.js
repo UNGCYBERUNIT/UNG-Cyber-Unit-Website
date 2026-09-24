@@ -3067,12 +3067,19 @@ async function loadProfileAccount() {
           ${profile.discordLinked
             ? '<button type="button" class="btn btn-sm" id="discordUnlinkBtn">Unlink</button>'
             : '<a class="btn btn-sm" href="/api/discord/link/start" id="discordLinkBtn">Link Discord</a>'}
+        </div>
+        <div class="profile-sign-out-everywhere">
+          <strong>Sessions</strong>
+          <span>If you think your login was used on a device or browser that isn't yours, end every session at once.</span>
+          <p class="form-error" id="signOutEverywhereError" aria-live="polite" hidden></p>
+          <button type="button" class="btn btn-sm btn-danger" id="signOutEverywhereBtn">Sign out everywhere</button>
         </div>` : ''}
       </div>`;
 
     wireAvatarControls();
     wireVisibilityToggle(profile.username);
     wireDiscordControls();
+    wireSignOutEverywhere();
     renderProfileRoomHistory(profile.roomAttempts ?? []);
     renderProfileBadges(profile.badges ?? []);
     renderEmailVerification(profile);
@@ -3251,6 +3258,36 @@ function wireDiscordControls() {
       if (statusText) statusText.textContent = 'Could not unlink — please try again.';
       unlinkBtn.disabled = false;
     }
+  });
+}
+
+// Self-service session revocation (see CLAUDE.md's "Session revocation"
+// section). Reuses the app's existing confirmDialog() warning pattern (same
+// one handleLogout() uses) since this signs out every device at once,
+// including this one — a stronger action than a normal sign-out.
+function wireSignOutEverywhere() {
+  const btn = document.getElementById('signOutEverywhereBtn');
+  if (!btn) return;
+
+  btn.addEventListener('click', () => {
+    const errorEl = document.getElementById('signOutEverywhereError');
+    if (errorEl) errorEl.hidden = true;
+    confirmDialog(
+      'This will immediately sign out every device and browser using your account, including this one. You\'ll need to log in again here too.',
+      async () => {
+        btn.disabled = true;
+        try {
+          const res = await fetch('/api/auth/sign-out-everywhere', { method: 'POST' });
+          if (!res.ok) throw new Error();
+          currentUser = null;
+          window.location.reload();
+        } catch {
+          if (errorEl) { errorEl.textContent = 'Could not sign out everywhere — please try again.'; errorEl.hidden = false; }
+          btn.disabled = false;
+        }
+      },
+      'Sign out everywhere',
+    );
   });
 }
 
