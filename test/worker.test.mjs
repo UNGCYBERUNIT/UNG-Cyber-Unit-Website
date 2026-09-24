@@ -3316,29 +3316,35 @@ describe('POST /api/lab/web-exploitation/login', () => {
   // exploitable (not simulated) without needing a real SQL engine. It
   // pattern-matches the literal query text worker.js builds, same as
   // SQLite would actually evaluate it, against one seeded fake admin row.
-  function mockWebexploitDB({ throwOnQuery = false } = {}) {
+  function mockWebexploitDB({ throwOnQuery = false, rateLimited = false } = {}) {
     const calls = [];
     return {
       calls,
       WEBEXPLOIT_DB: {
         prepare(sql) {
           calls.push(sql);
-          return {
-            first: async () => {
-              if (throwOnQuery) throw new Error('near "OR": syntax error');
-              // Legitimate credentials.
-              if (sql.includes("username = 'admin' AND password = 'SuperSecret2026!'")) {
-                return { id: 1, username: 'admin', role: 'administrator', notes: 'SYSTEM FLAG: fake-test-flag-xyz' };
-              }
-              // Classic auth-bypass payloads — the vulnerable query has no
-              // escaping, so these genuinely alter the SQL's logic exactly
-              // like they would against real SQLite.
-              if (/username = '.*' OR '1'='1'/.test(sql) || sql.includes("username = 'admin'--")) {
-                return { id: 1, username: 'admin', role: 'administrator', notes: 'SYSTEM FLAG: fake-test-flag-xyz' };
-              }
-              return null;
-            },
+          const first = async () => {
+            // Rate-limit COUNT check (checkWebexploitLoginLimit) — separate
+            // from the vulnerable login query below, must never throw here
+            // even when throwOnQuery is set for the login-query test cases.
+            if (sql.includes('FROM webexploit_login_rate_limit')) {
+              return { n: rateLimited ? 999 : 0 };
+            }
+            if (throwOnQuery) throw new Error('near "OR": syntax error');
+            // Legitimate credentials.
+            if (sql.includes("username = 'admin' AND password = 'SuperSecret2026!'")) {
+              return { id: 1, username: 'admin', role: 'administrator', notes: 'SYSTEM FLAG: fake-test-flag-xyz' };
+            }
+            // Classic auth-bypass payloads — the vulnerable query has no
+            // escaping, so these genuinely alter the SQL's logic exactly
+            // like they would against real SQLite.
+            if (/username = '.*' OR '1'='1'/.test(sql) || sql.includes("username = 'admin'--")) {
+              return { id: 1, username: 'admin', role: 'administrator', notes: 'SYSTEM FLAG: fake-test-flag-xyz' };
+            }
+            return null;
           };
+          const run = async () => ({ meta: { changes: 1 } }); // recordWebexploitLoginAttempt's INSERT/DELETE
+          return { first, run, bind: (...bindings) => { calls.push(sql); return { first, run }; } };
         },
       },
     };
@@ -3395,7 +3401,7 @@ describe('POST /api/lab/web-exploitation/login', () => {
     assert.ok(data.notes.length > 0);
     // Confirm the vulnerability is structural: the raw payload must appear
     // unescaped in the query sent to the database, not sanitized away.
-    assert.ok(db.calls[0].includes("' OR '1'='1' -- "));
+    assert.ok(db.calls.some(sql => sql.includes("' OR '1'='1' -- ")));
   });
 
   test('should surface a SQL syntax error from a malformed payload rather than a generic 500', async () => {
@@ -3421,6 +3427,29 @@ describe('POST /api/lab/web-exploitation/login', () => {
       mockWebexploitDB(),
     );
     assert.equal(res.status, 400);
+  });
+
+  test('should 429 when the per-IP rate limit is exceeded', async () => {
+    const res = await worker.fetch(
+      new Request('https://example.com/api/lab/web-exploitation/login', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: 'nobody', password: 'wrong' }),
+      }),
+      mockWebexploitDB({ rateLimited: true }),
+    );
+    assert.equal(res.status, 429);
+  });
+
+  test('should record an attempt in the rate-limit table on every request', async () => {
+    const db = mockWebexploitDB();
+    await worker.fetch(
+      new Request('https://example.com/api/lab/web-exploitation/login', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: 'nobody', password: 'wrong' }),
+      }),
+      db,
+    );
+    assert.ok(db.calls.some(sql => sql.includes('INSERT INTO webexploit_login_rate_limit')));
   });
 });
 

@@ -2010,6 +2010,34 @@ async function recordFeedbackSubmission(env, request) {
   await env.DB.prepare('DELETE FROM feedback_rate_limit WHERE ts < ?').bind(now - FEEDBACK_RL_WINDOW_MS).run();
 }
 
+const WEBEXPLOIT_LOGIN_RL_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
+const WEBEXPLOIT_LOGIN_RL_MAX = 30;                   // attempts per IP per window — generous enough
+// for a student manually iterating on injection payloads, still caps a scripted flood.
+// Uses env.WEBEXPLOIT_DB exclusively (own table in webexploit-schema.sql) — this endpoint
+// must never have a reason to touch env.DB, not even for bookkeeping like this.
+
+// Returns a 429 Response when this IP is over the limit, otherwise null.
+async function checkWebexploitLoginLimit(env, request) {
+  if (!env.WEBEXPLOIT_DB) return null;
+  const cutoff = Date.now() - WEBEXPLOIT_LOGIN_RL_WINDOW_MS;
+  const row = await env.WEBEXPLOIT_DB.prepare(
+    'SELECT COUNT(*) AS n FROM webexploit_login_rate_limit WHERE ip = ? AND ts > ?'
+  ).bind(clientIP(request), cutoff).first();
+  if ((row?.n ?? 0) >= WEBEXPLOIT_LOGIN_RL_MAX) {
+    return jsonResponse({ success: false, message: 'Too many attempts. Please wait a while and try again.' }, 429);
+  }
+  return null;
+}
+
+async function recordWebexploitLoginAttempt(env, request) {
+  if (!env.WEBEXPLOIT_DB) return;
+  const now = Date.now();
+  await env.WEBEXPLOIT_DB.prepare('INSERT INTO webexploit_login_rate_limit (ip, ts) VALUES (?, ?)')
+    .bind(clientIP(request), now).run();
+  // Opportunistically prune expired rows so the table stays small.
+  await env.WEBEXPLOIT_DB.prepare('DELETE FROM webexploit_login_rate_limit WHERE ts < ?').bind(now - WEBEXPLOIT_LOGIN_RL_WINDOW_MS).run();
+}
+
 const SIGNUP_RL_WINDOW_MS = 60 * 60 * 1000; // 1 hour
 const SIGNUP_RL_MAX = 10;                   // account creations (register + guest) per IP per window
 
@@ -4386,6 +4414,10 @@ export default {
         return jsonResponse({ error: 'Input too long' }, 400);
       }
 
+      const limited = await checkWebexploitLoginLimit(env, request);
+      if (limited) return limited;
+      await recordWebexploitLoginAttempt(env, request);
+
       const query = `SELECT id, username, role, notes FROM webexploit_employees WHERE username = '${username}' AND password = '${password}'`;
       let row;
       try {
@@ -4661,6 +4693,13 @@ export default {
         .bind(Date.now() - CHALLENGE_SUBMIT_RL_WINDOW_MS)
         .run()
     );
+    if (env.WEBEXPLOIT_DB) {
+      ctx.waitUntil(
+        env.WEBEXPLOIT_DB.prepare('DELETE FROM webexploit_login_rate_limit WHERE ts < ?')
+          .bind(Date.now() - WEBEXPLOIT_LOGIN_RL_WINDOW_MS)
+          .run()
+      );
+    }
 
     // Guest accounts that never upgraded (see /api/auth/upgrade) are dead
     // weight once their session has expired — nothing can log back into
