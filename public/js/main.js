@@ -731,6 +731,9 @@ function updateAuthNav() {
       `<a href="/start" class="nav-dropdown-item">Beginner Pathway</a>`,
       `<a href="/resources" class="nav-dropdown-item">Resources</a>`,
     ]),
+    col('Challenges', [
+      `<a href="/challenges" class="nav-dropdown-item">CTF Challenges</a>`,
+    ]),
     col('Community', [
       `<a href="/announcements" class="nav-dropdown-item">Announcements${showUnreadDot ? ' <span class="nav-badge-dot" aria-label="Unread announcements"></span>' : ''}</a>`,
       `<a href="/events" class="nav-dropdown-item">Events</a>`,
@@ -2744,6 +2747,35 @@ function initContactPage() {
   });
 }
 
+// ─── /challenges hub ────────────────────────────────────────────────────────
+// The grid itself is server-rendered (crawlers/no-JS see every module); this
+// only layers on a per-user completion badge, same progressive-enhancement
+// pattern as the homepage topic grid — never wipes the server-rendered cards
+// if the fetch fails.
+async function initChallengesHub() {
+  const cards = document.querySelectorAll('#challengesGrid .card[data-challenge]');
+  if (!cards.length || !currentUser) return;
+
+  await Promise.all([...cards].map(async card => {
+    const id = card.dataset.challenge;
+    const total = parseInt(card.dataset.totalParts, 10) || 0;
+    if (!total) return;
+    try {
+      const res = await fetch(`/api/challenges/${id}/progress`);
+      if (!res.ok) return;
+      const { completed } = await res.json();
+      const done = (completed ?? []).length;
+      if (done === 0) return;
+      card.classList.toggle('card-completed', done === total);
+      const badge = document.createElement('div');
+      badge.className = 'card-progress';
+      badge.setAttribute('aria-label', `${done} of ${total} challenges complete`);
+      badge.innerHTML = `${done}/${total}${done === total ? ' <span class="progress-star" aria-hidden="true">★</span>' : ''}`;
+      card.prepend(badge);
+    } catch { /* leave the server-rendered card as-is */ }
+  }));
+}
+
 // ─── Downloadable Challenge Pages (log-analysis-challenge, network-traffic-challenge, ...) ──
 // Every such page shares the same #answerKeySection markup — reveal it only
 // for instructor/admin. The real gate is server-side (requireRole on
@@ -3792,5 +3824,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   } else if (window.location.pathname === '/network-traffic-challenge') {
     initChallengeAnswerKeyToggle();
     initChallengeSubmissions('wireshark-nta');
+  } else if (window.location.pathname === '/challenges') {
+    initChallengesHub();
   }
 });

@@ -1574,13 +1574,66 @@ async function recordRoomLookupFailure(env, request) {
   await env.DB.prepare('DELETE FROM room_lookup_failures WHERE ts < ?').bind(now - ROOM_RL_WINDOW_MS).run();
 }
 
+// ─── CTF Challenge Modules ──────────────────────────────────────────────────
+// Single source of truth for the /challenges hub page and CHALLENGE_PARTS
+// (below), so the two can never drift out of sync the way two independently
+// hand-kept lists could. Legacy modules (log-analysis-regex, wireshark-nta)
+// carry just enough metadata to list on the hub and derive their parts —
+// pageUrl points at their existing bespoke HTML page, which stays untouched.
+// New modules will carry full briefing/downloads/toolbox content and get
+// server-rendered generically at /challenges/:id — see
+// docs/plan-intermediate-track.md before adding one.
+const ctfModules = [
+  {
+    id: 'log-analysis-regex',
+    title: 'Log Analysis & Regex Workshop',
+    category: 'Log Analysis',
+    difficulty: 'Beginner',
+    icon: '🔍',
+    shortDesc: 'Hunt for indicators of compromise across five real-world-style logs using regex.',
+    pageUrl: '/log-analysis-challenge',
+    parts: ['challenge-1', 'challenge-2', 'challenge-3', 'challenge-4', 'challenge-5'],
+  },
+  {
+    id: 'wireshark-nta',
+    title: 'Network Traffic Analysis & Wireshark',
+    category: 'Network Forensics',
+    difficulty: 'Beginner',
+    icon: '📡',
+    shortDesc: 'Spot a cleartext credential leak in a live-captured packet trace.',
+    pageUrl: '/network-traffic-challenge',
+    parts: ['live-demo'],
+  },
+];
+
+// A single CTF module card for the /challenges hub grid — same visual
+// language as topicCard()'s "module" cards, linking out to wherever the
+// module's page actually lives (legacy bespoke page or, once any exist, a
+// generic /challenges/:id page).
+function challengeCard(m) {
+  const title = escapeHtml(m.title);
+  return `<a href="${m.pageUrl}" class="card card-link" data-challenge="${m.id}" data-total-parts="${m.parts.length}" aria-label="${title}">
+          <div class="card-icon" aria-hidden="true">${m.icon ?? '🚩'}</div>
+          <h3 class="card-title">${title}</h3>
+          <p class="card-desc">${escapeHtml(m.shortDesc ?? '')}</p>
+          <div class="card-footer">
+            <span class="badge badge-${m.difficulty.toLowerCase()}">${escapeHtml(m.difficulty)}</span>
+            <span class="card-desc" style="margin:0;">${escapeHtml(m.category)}</span>
+          </div>
+        </a>`;
+}
+
+// Server-rendered hub grid so crawlers/no-JS users see every module without
+// depending on a client-side fetch — same philosophy as homeTopicCards().
+function challengesHubCards() {
+  return ctfModules.map(challengeCard).join('\n        ');
+}
+
 // ─── Downloadable-Challenge Answer Submission ──────────────────────────────────
 // Structure only (which part ids exist per challenge) — safe to be public,
 // no answers live here. See schema.sql's challenge_answers table for those.
-const CHALLENGE_PARTS = {
-  'log-analysis-regex': ['challenge-1', 'challenge-2', 'challenge-3', 'challenge-4', 'challenge-5'],
-  'wireshark-nta': ['live-demo'],
-};
+// Derived from ctfModules so the two can never drift out of sync.
+const CHALLENGE_PARTS = Object.fromEntries(ctfModules.map(m => [m.id, m.parts]));
 
 const MAX_ANSWER_SUBMIT_LEN = 200;
 
@@ -1828,6 +1881,10 @@ export {
   pathwayHtml,
   topicMetaTags,
   computeMissRates,
+  ctfModules,
+  CHALLENGE_PARTS,
+  challengeCard,
+  challengesHubCards,
 };
 
 // ─── Worker Entry Point ───────────────────────────────────────────────────────
@@ -3841,8 +3898,13 @@ export default {
         // the canonical /sop URL with no way to signal a canonical (PDFs can't
         // carry a <link rel="canonical">). Keep crawlers off the raw file.
         'Disallow: /Cyber_Unit_SOP.pdf',
-        // Downloadable workshop assets (zip/pdf/pptx) linked from
-        // /log-analysis-challenge — not standalone content pages worth indexing.
+        // Downloadable workshop assets (zip/pdf/pptx/pcapng) under
+        // public/challenges/<id>/ — not standalone content pages worth
+        // indexing. NOTE: this trailing-slash rule does NOT match the
+        // canonical /challenges hub page (no trailing slash) — but if a
+        // future generic /challenges/:id module page ships (see
+        // docs/plan-intermediate-track.md), it WOULD collide with this rule
+        // and get wrongly deindexed. Revisit this line before shipping one.
         'Disallow: /challenges/',
         // Same reasoning as the SOP PDF above — the raw per-topic cheat-sheet
         // files are reachable at their static path but only the canonical
@@ -3860,7 +3922,7 @@ export default {
     // Generated from the topics list so it stays in sync as topics are added.
     if (path === '/sitemap.xml') {
       const base = 'https://ungcyberunit.org';
-      const paths = ['/', '/start', '/about', '/resources', '/sop', '/log-analysis-challenge', '/network-traffic-challenge', '/announcements', '/events', ...topics.map(t => `/topic/${t.id}`)];
+      const paths = ['/', '/start', '/about', '/resources', '/sop', '/log-analysis-challenge', '/network-traffic-challenge', '/challenges', '/announcements', '/events', ...topics.map(t => `/topic/${t.id}`)];
       const body = `<?xml version="1.0" encoding="UTF-8"?>\n`
         + `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n`
         + paths.map(p => `  <url><loc>${base}${p}</loc></url>`).join('\n')
@@ -4021,6 +4083,7 @@ export default {
       '/student-hub': '/student-hub',
       '/log-analysis-challenge': '/log-analysis-challenge',
       '/network-traffic-challenge': '/network-traffic-challenge',
+      '/challenges': '/challenges',
     };
 
     // topic/:id — any path matching /topic/<something>
@@ -4129,6 +4192,15 @@ export default {
           if (path === '/start') {
             const html = (await assetResponse.text())
               .replace('<!-- PATHWAY -->', pathwayHtml());
+            headers.delete('Content-Length');
+            headers.set('Content-Type', 'text/html; charset=utf-8');
+            return new Response(html, { status: assetResponse.status, headers });
+          }
+
+          // Server-render the CTF challenge hub grid into /challenges.
+          if (path === '/challenges') {
+            const html = (await assetResponse.text())
+              .replace('<!-- Populated by main.js -->', challengesHubCards());
             headers.delete('Content-Length');
             headers.set('Content-Type', 'text/html; charset=utf-8');
             return new Response(html, { status: assetResponse.status, headers });

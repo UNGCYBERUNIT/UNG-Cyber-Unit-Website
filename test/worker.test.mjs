@@ -39,6 +39,10 @@ import worker, {
   pathwayHtml,
   topicMetaTags,
   computeMissRates,
+  ctfModules,
+  CHALLENGE_PARTS,
+  challengeCard,
+  challengesHubCards,
 } from '../worker.js';
 
 // ─── Test fixtures ────────────────────────────────────────────────────────────
@@ -900,6 +904,42 @@ describe('topicCard', () => {
     const advanced = topicCard({ id: '05', title: 'X', icon: '🛡️', shortDesc: 'Y', difficulty: 'Advanced' });
     assert.match(advanced, /class="badge badge-advanced"/);
     assert.match(advanced, />Advanced</);
+  });
+});
+
+describe('challengeCard / challengesHubCards', () => {
+  test('should render a linked module card pointing at its pageUrl', () => {
+    const html = challengeCard({
+      id: 'test-mod', title: 'Test Module', icon: '🚩', shortDesc: 'Y',
+      category: 'Testing', difficulty: 'Intermediate', pageUrl: '/challenges/test-mod',
+      parts: ['a', 'b'],
+    });
+    assert.match(html, /href="\/challenges\/test-mod"/);
+    assert.match(html, /data-challenge="test-mod"/);
+    assert.match(html, /data-total-parts="2"/);
+    assert.match(html, /class="badge badge-intermediate"/);
+  });
+
+  test('should HTML-escape title and description', () => {
+    const html = challengeCard({
+      id: 'x', title: 'Crack & Enter', icon: '🚩', shortDesc: 'a "b"',
+      category: 'Testing', difficulty: 'Beginner', pageUrl: '/x', parts: ['a'],
+    });
+    assert.match(html, /Crack &amp; Enter/);
+    assert.match(html, /a &quot;b&quot;/);
+  });
+
+  test('CHALLENGE_PARTS should be derived from ctfModules, not hand-kept separately', () => {
+    for (const m of ctfModules) {
+      assert.deepEqual(CHALLENGE_PARTS[m.id], m.parts);
+    }
+  });
+
+  test('challengesHubCards should render one card per module, including the legacy pages', () => {
+    const html = challengesHubCards();
+    assert.match(html, /href="\/log-analysis-challenge"/);
+    assert.match(html, /href="\/network-traffic-challenge"/);
+    assert.equal((html.match(/class="card card-link"/g) || []).length, ctfModules.length);
   });
 });
 
@@ -2803,7 +2843,7 @@ describe('GET /api/admin/audit-log', () => {
 // and topic pages shipping only a client-rendered "Loading topic..." shell).
 
 describe('Static/simple pages', () => {
-  const pages = ['/', '/start', '/about', '/resources', '/profile', '/admin', '/instructor', '/quiz', '/leaderboard', '/members', '/announcements', '/events'];
+  const pages = ['/', '/start', '/about', '/resources', '/profile', '/admin', '/instructor', '/quiz', '/leaderboard', '/members', '/announcements', '/events', '/challenges'];
 
   for (const path of pages) {
     test(`GET ${path} should render 200 HTML with no leftover template placeholders`, async () => {
@@ -2831,6 +2871,14 @@ describe('Static/simple pages', () => {
       for (const id of stage.topicIds) {
         assert.ok(body.includes(`/topic/${id}`), `pathway links to topic ${id}`);
       }
+    }
+  });
+
+  test('GET /challenges should server-render every CTF module card (not depend on client JS)', async () => {
+    const res = await worker.fetch(new Request('https://example.com/challenges'), { ASSETS: mockAssets() });
+    const body = await res.text();
+    for (const m of ctfModules) {
+      assert.ok(body.includes(m.pageUrl), `hub links to module ${m.id}`);
     }
   });
 });
