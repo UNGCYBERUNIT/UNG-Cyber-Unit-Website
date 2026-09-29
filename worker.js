@@ -1602,7 +1602,6 @@ const ctfModules = [
     title: 'Log Analysis & Regex Workshop',
     category: 'Log Analysis',
     difficulty: 'Beginner',
-    icon: '🔍',
     shortDesc: 'Hunt for indicators of compromise across five real-world-style logs using regex.',
     pageUrl: '/log-analysis-challenge',
     parts: ['challenge-1', 'challenge-2', 'challenge-3', 'challenge-4', 'challenge-5'],
@@ -1612,7 +1611,6 @@ const ctfModules = [
     title: 'Network Traffic Analysis & Wireshark',
     category: 'Network Forensics',
     difficulty: 'Beginner',
-    icon: '📡',
     shortDesc: 'Spot a cleartext credential leak in a live-captured packet trace.',
     pageUrl: '/network-traffic-challenge',
     parts: ['live-demo'],
@@ -1622,7 +1620,6 @@ const ctfModules = [
     title: 'Layers of Secrecy',
     category: 'Cryptography',
     difficulty: 'Intermediate',
-    icon: '🔐',
     shortDesc: 'Peel back two independently-encoded blocks from an intercepted transmission.',
     pageUrl: '/challenges/crypto-layers',
     downloads: [
@@ -1664,7 +1661,6 @@ const ctfModules = [
     title: 'Hidden in Plain Sight',
     category: 'File Forensics',
     difficulty: 'Intermediate',
-    icon: '🖼️',
     shortDesc: 'A leaked draft image is hiding two independent flags — one in the pixels, one in the metadata.',
     pageUrl: '/challenges/hidden-in-plain-sight',
     downloads: [
@@ -1706,7 +1702,6 @@ const ctfModules = [
     title: 'Crack the Vault',
     category: 'Password Auditing',
     difficulty: 'Intermediate',
-    icon: '🔓',
     shortDesc: 'Two recovered password hashes, one small wordlist — recover the weaker of the two passwords.',
     pageUrl: '/challenges/crack-the-vault',
     downloads: [
@@ -1742,7 +1737,6 @@ const ctfModules = [
     title: 'Breach the Portal',
     category: 'Web Exploitation',
     difficulty: 'Intermediate',
-    icon: '🌐',
     shortDesc: 'A live, genuinely vulnerable employee login page — find the flaw and read data you shouldn\'t be able to.',
     pageUrl: '/challenges/web-exploitation',
     target: {
@@ -1939,7 +1933,6 @@ function challengeModuleNavHtml(currentId) {
 function challengeCard(m) {
   const title = escapeHtml(m.title);
   return `<a href="${m.pageUrl}" class="card card-link" data-challenge="${m.id}" data-total-parts="${m.parts.length}" aria-label="${title}">
-          <div class="card-icon" aria-hidden="true">${m.icon ?? '🚩'}</div>
           <h3 class="card-title">${title}</h3>
           <p class="card-desc">${escapeHtml(m.shortDesc ?? '')}</p>
           <div class="card-footer">
