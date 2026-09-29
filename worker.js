@@ -1449,6 +1449,65 @@ async function verifyJWT(token, secret) {
   } catch { return null; }
 }
 
+// ── Web Exploitation Lab: deliberately forgeable "Remember Me" token ───────
+// Backs the "None the Wiser" part of "Breach the Portal" (ctfModules id
+// 'web-exploitation', part 'jwt-forge'). A real, historically common JWT
+// bug: the verifier below trusts whatever `alg` the token's OWN header
+// claims instead of pinning it to HS256 server-side, so a token with
+// alg:"none" skips the signature check entirely and its payload is
+// trusted as-is. Completely separate from this site's real signJWT()/
+// verifyJWT() above (which always hardcode HS256 and env.JWT_SECRET) —
+// never reuse this pattern, or this secret, for real auth.
+const LAB_JWT_SECRET = 'webexploit-remember-me-2026';
+
+function labB64uEncode(obj) {
+  return btoa(JSON.stringify(obj)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+}
+function labB64uDecode(str) {
+  return JSON.parse(atob(str.replace(/-/g, '+').replace(/_/g, '/')));
+}
+
+async function labIssueRememberToken(payload) {
+  const header = labB64uEncode({ alg: 'HS256', typ: 'JWT' });
+  const body = labB64uEncode(payload);
+  const data = `${header}.${body}`;
+  const key = await crypto.subtle.importKey(
+    'raw', new TextEncoder().encode(LAB_JWT_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+  );
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(data));
+  const sigB64 = btoa(String.fromCharCode(...new Uint8Array(sig))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+  return `${data}.${sigB64}`;
+}
+
+// Returns the decoded payload if the token passes this endpoint's (broken)
+// rules, or null. THE BUG lives in the alg:"none" branch below — it returns
+// the payload with no signature verification at all.
+async function labVerifyRememberToken(token) {
+  const parts = (token ?? '').split('.');
+  if (parts.length !== 3) return null;
+  const [h, p, s] = parts;
+  let header, payload;
+  try {
+    header = labB64uDecode(h);
+    payload = labB64uDecode(p);
+  } catch { return null; }
+
+  if (header.alg === 'none') return payload;
+
+  if (header.alg === 'HS256') {
+    try {
+      const key = await crypto.subtle.importKey(
+        'raw', new TextEncoder().encode(LAB_JWT_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']
+      );
+      const sig = Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
+      const valid = await crypto.subtle.verify('HMAC', key, sig, new TextEncoder().encode(`${h}.${p}`));
+      return valid ? payload : null;
+    } catch { return null; }
+  }
+
+  return null;
+}
+
 // Revocable sessions: after verifying the JWT's signature/expiry, compare
 // its `ver` claim against the user's current token_version in D1. Bumped on
 // password reset and POST /api/auth/sign-out-everywhere, so a copied/stolen
@@ -1736,7 +1795,7 @@ const ctfModules = [
     id: 'web-exploitation',
     title: 'Breach the Portal',
     category: 'Web Exploitation',
-    difficulty: 'Intermediate',
+    difficulty: 'Advanced',
     shortDesc: 'A live, genuinely vulnerable employee login page — find the flaw and read data you shouldn\'t be able to.',
     pageUrl: '/challenges/web-exploitation',
     target: {
@@ -1776,6 +1835,12 @@ const ctfModules = [
         title: 'Broken Trust',
         difficulty: 'medium',
         desc: 'The login form isn\'t the only way in. Something else this app does trusts you without ever really checking who you are.',
+      },
+      {
+        id: 'jwt-forge',
+        title: 'None the Wiser',
+        difficulty: 'hard',
+        desc: 'There\'s a "Remember Me" feature now too, and it hands out tokens to anyone who asks. Not every token that looks signed actually gets checked.',
       },
     ],
     ethicsNotice: true,
@@ -4500,6 +4565,35 @@ export default {
       const row = await env.WEBEXPLOIT_DB.prepare(
         'SELECT notes FROM webexploit_employees WHERE username = ?'
       ).bind('sysnotice').first();
+
+      return jsonResponse({ success: true, message: row?.notes ?? '' });
+    }
+
+    // ── Web Exploitation Lab: forgeable "Remember Me" token ───────────────────
+    // Backs the "None the Wiser" part (ctfModules id 'web-exploitation', part
+    // 'jwt-forge'). Issuing needs no login at all — a low-privilege preview
+    // token, same idea as a "try it out" link. The verifier is the
+    // deliberately broken half (see labVerifyRememberToken above): forging a
+    // token with header {"alg":"none"} and payload role:"administrator"
+    // skips signature verification entirely.
+    if (path === '/api/lab/web-exploitation/remember-me/issue' && request.method === 'GET') {
+      const token = await labIssueRememberToken({ sub: 'guest', role: 'guest', iat: Date.now() });
+      return jsonResponse({ token });
+    }
+
+    if (path === '/api/lab/web-exploitation/remember-me' && request.method === 'GET') {
+      if (!env.WEBEXPLOIT_DB) return jsonResponse({ error: 'Lab not configured' }, 503);
+
+      const auth = request.headers.get('Authorization') ?? '';
+      const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+      const payload = await labVerifyRememberToken(token);
+      if (!payload || payload.role !== 'administrator') {
+        return jsonResponse({ success: false, message: 'Access denied.' }, 403);
+      }
+
+      const row = await env.WEBEXPLOIT_DB.prepare(
+        'SELECT notes FROM webexploit_employees WHERE username = ?'
+      ).bind('jwtnotice').first();
 
       return jsonResponse({ success: true, message: row?.notes ?? '' });
     }
