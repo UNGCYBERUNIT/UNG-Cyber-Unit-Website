@@ -1746,15 +1746,14 @@ const ctfModules = [
       icon: '🎯',
     },
     toolbox: [
-      { name: 'Your browser', desc: 'No special tools needed — a login form and some SQL intuition is enough.' },
-      { name: 'View Page Source / DevTools', desc: 'Ctrl+U (or right-click → View Page Source) shows the raw HTML, including anything left behind in comments that never renders on the page itself. The DevTools Console also lets you set cookies by hand with `document.cookie = "..."`.' },
-      { name: 'SQL injection basics', desc: 'A classic auth-bypass payload breaks out of a quoted string and neutralizes the rest of the query — e.g. ending the username with a quote, then commenting out whatever follows.' },
+      { name: 'Your browser', desc: 'No special tools needed for any of this — your browser and its built-in DevTools are enough.' },
+      { name: 'View Page Source / DevTools', desc: 'Ctrl+U (or right-click → View Page Source) shows the raw HTML, including anything left behind in comments that never renders on the page itself.' },
     ],
     briefing: {
       sections: [
         {
           heading: 'Situation',
-          body: 'A small internal tool for the campus IT team leaked its login URL. It\'s a basic username/password form — nothing fancy. Nothing about the page itself hints at a problem. The problem is in how it checks your password. But before you even get there, it\'s worth a look at what shipped in the page itself.',
+          body: 'A small internal tool for the campus IT team leaked its login URL. It\'s a basic username/password form — nothing fancy. Nothing about the page itself hints at a problem. Start by taking a look at what actually shipped in it.',
         },
       ],
     },
@@ -1776,7 +1775,7 @@ const ctfModules = [
         id: 'cookie-hijack',
         title: 'Broken Trust',
         difficulty: 'medium',
-        desc: 'The admin\'s own notes mention a "stay signed in" cookie the portal never actually verifies against anything. You don\'t need a password, and you don\'t need SQL this time — you just need the right cookie.',
+        desc: 'The login form isn\'t the only way in. Something else this app does trusts you without ever really checking who you are.',
       },
     ],
     ethicsNotice: true,
