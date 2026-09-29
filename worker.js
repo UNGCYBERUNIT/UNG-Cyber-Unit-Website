@@ -1747,17 +1747,25 @@ const ctfModules = [
     },
     toolbox: [
       { name: 'Your browser', desc: 'No special tools needed — a login form and some SQL intuition is enough.' },
+      { name: 'View Page Source / DevTools', desc: 'Ctrl+U (or right-click → View Page Source) shows the raw HTML, including anything left behind in comments that never renders on the page itself.' },
       { name: 'SQL injection basics', desc: 'A classic auth-bypass payload breaks out of a quoted string and neutralizes the rest of the query — e.g. ending the username with a quote, then commenting out whatever follows.' },
     ],
     briefing: {
       sections: [
         {
           heading: 'Situation',
-          body: 'A small internal tool for the campus IT team leaked its login URL. It\'s a basic username/password form — nothing fancy. Nothing about the page itself hints at a problem. The problem is in how it checks your password.',
+          body: 'A small internal tool for the campus IT team leaked its login URL. It\'s a basic username/password form — nothing fancy. Nothing about the page itself hints at a problem. The problem is in how it checks your password. But before you even get there, it\'s worth a look at what shipped in the page itself.',
         },
       ],
     },
     parts: [
+      {
+        id: 'source-recon',
+        title: 'Read Between the Lines',
+        difficulty: 'easy',
+        desc: 'Developers leave things behind in HTML comments they forget are visible to anyone who looks — view the portal\'s page source and see what turns up.',
+        targetFile: '/lab/web-exploitation-portal (page source)',
+      },
       {
         id: 'auth-bypass',
         title: 'Bypass the Login',
@@ -4510,6 +4518,7 @@ export default {
       '/network-traffic-challenge': '/network-traffic-challenge',
       '/challenges': '/challenges',
       '/lab/web-exploitation-portal': '/lab/web-exploitation-portal',
+      '/lab/staging-notes': '/lab/staging-notes',
     };
 
     // topic/:id — any path matching /topic/<something>
