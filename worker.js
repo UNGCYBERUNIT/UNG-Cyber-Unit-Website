@@ -1747,7 +1747,7 @@ const ctfModules = [
     },
     toolbox: [
       { name: 'Your browser', desc: 'No special tools needed — a login form and some SQL intuition is enough.' },
-      { name: 'View Page Source / DevTools', desc: 'Ctrl+U (or right-click → View Page Source) shows the raw HTML, including anything left behind in comments that never renders on the page itself.' },
+      { name: 'View Page Source / DevTools', desc: 'Ctrl+U (or right-click → View Page Source) shows the raw HTML, including anything left behind in comments that never renders on the page itself. The DevTools Console also lets you set cookies by hand with `document.cookie = "..."`.' },
       { name: 'SQL injection basics', desc: 'A classic auth-bypass payload breaks out of a quoted string and neutralizes the rest of the query — e.g. ending the username with a quote, then commenting out whatever follows.' },
     ],
     briefing: {
@@ -1771,6 +1771,12 @@ const ctfModules = [
         title: 'Bypass the Login',
         difficulty: 'medium',
         desc: 'You don\'t have a valid password for any account — you\'re not supposed to. Get past the login anyway, land in the administrator\'s account, and read what\'s sitting in their notes.',
+      },
+      {
+        id: 'cookie-hijack',
+        title: 'Broken Trust',
+        difficulty: 'medium',
+        desc: 'The admin\'s own notes mention a "stay signed in" cookie the portal never actually verifies against anything. You don\'t need a password, and you don\'t need SQL this time — you just need the right cookie.',
       },
     ],
     ethicsNotice: true,
@@ -4472,6 +4478,31 @@ export default {
 
       if (!row) return jsonResponse({ success: false, message: 'Invalid username or password.' });
       return jsonResponse({ success: true, username: row.username, role: row.role, notes: row.notes });
+    }
+
+    // ── Web Exploitation Lab: cookie-trust admin console ──────────────────────
+    // Backs the "Broken Trust" part of "Breach the Portal" (ctfModules id
+    // 'web-exploitation', part 'cookie-hijack'). Deliberately checks nothing
+    // but a plain, unsigned cookie value the client fully controls — no
+    // lookup against a real session store, no signature, no expiry. The
+    // in-fiction hint (the admin's notes, returned by the login SQLi above)
+    // tells the player this cookie's name and that its value alone decides
+    // access, so setting `webexploit_session=administrator` from DevTools and
+    // requesting this endpoint directly is the intended solve — no real
+    // login required. Never wire this to real getSession()/JWT auth.
+    if (path === '/api/lab/web-exploitation/admin-console' && request.method === 'GET') {
+      if (!env.WEBEXPLOIT_DB) return jsonResponse({ error: 'Lab not configured' }, 503);
+
+      const cookies = parseCookies(request.headers.get('Cookie'));
+      if (cookies.webexploit_session !== 'administrator') {
+        return jsonResponse({ success: false, message: 'Access denied.' }, 403);
+      }
+
+      const row = await env.WEBEXPLOIT_DB.prepare(
+        'SELECT notes FROM webexploit_employees WHERE username = ?'
+      ).bind('sysnotice').first();
+
+      return jsonResponse({ success: true, message: row?.notes ?? '' });
     }
 
     // ── Per-topic cheat-sheet PDF ─────────────────────────────────────────────
