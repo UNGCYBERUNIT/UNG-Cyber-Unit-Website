@@ -1457,8 +1457,11 @@ async function verifyJWT(token, secret) {
 // alg:"none" skips the signature check entirely and its payload is
 // trusted as-is. Completely separate from this site's real signJWT()/
 // verifyJWT() above (which always hardcode HS256 and env.JWT_SECRET) —
-// never reuse this pattern, or this secret, for real auth.
-const LAB_JWT_SECRET = 'webexploit-remember-me-2026';
+// never reuse this pattern, or this secret, for real auth. The secret itself
+// lives in env.WEBEXPLOIT_JWT_SECRET (wrangler secret, .dev.vars locally) —
+// not hardcoded here — purely so it isn't sitting in this public repo where
+// anyone could read it and properly sign a forged token without ever
+// discovering the alg:none bug that's the actual point of the challenge.
 
 function labB64uEncode(obj) {
   return btoa(JSON.stringify(obj)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
@@ -1467,12 +1470,12 @@ function labB64uDecode(str) {
   return JSON.parse(atob(str.replace(/-/g, '+').replace(/_/g, '/')));
 }
 
-async function labIssueRememberToken(payload) {
+async function labIssueRememberToken(payload, secret) {
   const header = labB64uEncode({ alg: 'HS256', typ: 'JWT' });
   const body = labB64uEncode(payload);
   const data = `${header}.${body}`;
   const key = await crypto.subtle.importKey(
-    'raw', new TextEncoder().encode(LAB_JWT_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+    'raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
   );
   const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(data));
   const sigB64 = btoa(String.fromCharCode(...new Uint8Array(sig))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
@@ -1482,7 +1485,7 @@ async function labIssueRememberToken(payload) {
 // Returns the decoded payload if the token passes this endpoint's (broken)
 // rules, or null. THE BUG lives in the alg:"none" branch below — it returns
 // the payload with no signature verification at all.
-async function labVerifyRememberToken(token) {
+async function labVerifyRememberToken(token, secret) {
   const parts = (token ?? '').split('.');
   if (parts.length !== 3) return null;
   const [h, p, s] = parts;
@@ -1497,7 +1500,7 @@ async function labVerifyRememberToken(token) {
   if (header.alg === 'HS256') {
     try {
       const key = await crypto.subtle.importKey(
-        'raw', new TextEncoder().encode(LAB_JWT_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']
+        'raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['verify']
       );
       const sig = Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
       const valid = await crypto.subtle.verify('HMAC', key, sig, new TextEncoder().encode(`${h}.${p}`));
@@ -4554,6 +4557,15 @@ export default {
     // access, so setting `webexploit_session=administrator` from DevTools and
     // requesting this endpoint directly is the intended solve — no real
     // login required. Never wire this to real getSession()/JWT auth.
+    //
+    // The flag text lives in webexploit_lab_notices, NOT webexploit_employees
+    // — on purpose. The login endpoint below is UNION-injectable against
+    // webexploit_employees, and a row sitting in that same table would let a
+    // sharp SQLi player skip straight to this part's (and jwt-forge's) flag
+    // via `... UNION SELECT id, username, role, notes FROM
+    // webexploit_employees ORDER BY id DESC --`, bypassing the intended
+    // cookie/JWT mechanics entirely. A separate table with a different shape
+    // makes that UNION column-mismatch and fail.
     if (path === '/api/lab/web-exploitation/admin-console' && request.method === 'GET') {
       if (!env.WEBEXPLOIT_DB) return jsonResponse({ error: 'Lab not configured' }, 503);
 
@@ -4563,10 +4575,10 @@ export default {
       }
 
       const row = await env.WEBEXPLOIT_DB.prepare(
-        'SELECT notes FROM webexploit_employees WHERE username = ?'
-      ).bind('sysnotice').first();
+        'SELECT message FROM webexploit_lab_notices WHERE key = ?'
+      ).bind('cookie-hijack').first();
 
-      return jsonResponse({ success: true, message: row?.notes ?? '' });
+      return jsonResponse({ success: true, message: row?.message ?? '' });
     }
 
     // ── Web Exploitation Lab: forgeable "Remember Me" token ───────────────────
@@ -4575,27 +4587,34 @@ export default {
     // token, same idea as a "try it out" link. The verifier is the
     // deliberately broken half (see labVerifyRememberToken above): forging a
     // token with header {"alg":"none"} and payload role:"administrator"
-    // skips signature verification entirely.
+    // skips signature verification entirely. env.WEBEXPLOIT_JWT_SECRET is a
+    // throwaway lab-only secret (wrangler secret, .dev.vars locally) —
+    // completely separate from env.JWT_SECRET — kept out of this public repo
+    // so reading the source doesn't hand you a shortcut past the alg:none bug.
     if (path === '/api/lab/web-exploitation/remember-me/issue' && request.method === 'GET') {
-      const token = await labIssueRememberToken({ sub: 'guest', role: 'guest', iat: Date.now() });
+      if (!env.WEBEXPLOIT_JWT_SECRET) return jsonResponse({ error: 'Lab not configured' }, 503);
+      const token = await labIssueRememberToken({ sub: 'guest', role: 'guest', iat: Date.now() }, env.WEBEXPLOIT_JWT_SECRET);
       return jsonResponse({ token });
     }
 
     if (path === '/api/lab/web-exploitation/remember-me' && request.method === 'GET') {
-      if (!env.WEBEXPLOIT_DB) return jsonResponse({ error: 'Lab not configured' }, 503);
+      if (!env.WEBEXPLOIT_DB || !env.WEBEXPLOIT_JWT_SECRET) return jsonResponse({ error: 'Lab not configured' }, 503);
 
       const auth = request.headers.get('Authorization') ?? '';
       const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
-      const payload = await labVerifyRememberToken(token);
+      const payload = await labVerifyRememberToken(token, env.WEBEXPLOIT_JWT_SECRET);
       if (!payload || payload.role !== 'administrator') {
         return jsonResponse({ success: false, message: 'Access denied.' }, 403);
       }
 
+      // Same webexploit_lab_notices table as admin-console above, and for
+      // the same reason: keeping it out of webexploit_employees means a
+      // UNION-based SQLi against the login endpoint can't reach this flag.
       const row = await env.WEBEXPLOIT_DB.prepare(
-        'SELECT notes FROM webexploit_employees WHERE username = ?'
-      ).bind('jwtnotice').first();
+        'SELECT message FROM webexploit_lab_notices WHERE key = ?'
+      ).bind('jwt-forge').first();
 
-      return jsonResponse({ success: true, message: row?.notes ?? '' });
+      return jsonResponse({ success: true, message: row?.message ?? '' });
     }
 
     // ── Per-topic cheat-sheet PDF ─────────────────────────────────────────────
