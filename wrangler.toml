@@ -1,6 +1,12 @@
 name = "ung-cyber-unit-website"
 main = "worker.js"
 compatibility_date = "2024-01-01"
+workers_dev = false
+preview_urls = false
+routes = [
+  { pattern = "ungcyberunit.org", custom_domain = true },
+  { pattern = "www.ungcyberunit.org", custom_domain = true }
+]
 
 [assets]
 directory = "./public"
@@ -14,7 +20,7 @@ run_worker_first = [ "/", "/start", "/about", "/resources", "/admin", "/instruct
 [[d1_databases]]
 binding      = "DB"
 database_name = "cyber-unit-db"
-database_id  = "30fcf0cc-9912-430e-a8d2-54b9dec9ba1a"
+database_id  = "f613d6ab-2cc1-43d1-b20b-defe5c968590"
 
 # Deliberately separate database (not just separate tables in DB above) for
 # the "Breach the Portal" web-exploitation lab (see docs/plan-intermediate-
@@ -25,7 +31,7 @@ database_id  = "30fcf0cc-9912-430e-a8d2-54b9dec9ba1a"
 [[d1_databases]]
 binding      = "WEBEXPLOIT_DB"
 database_name = "cyber-unit-webexploit-db"
-database_id  = "1296989b-2ee4-45ac-a579-1d08de247136"
+database_id  = "0cb3dbe0-4a03-4dd9-a02b-dda15f99750d"
 
 # Discord OAuth client ID (see docs/plan-discord-pairing.md) — not sensitive,
 # it's embedded in the public OAuth authorize URL regardless, so it lives
