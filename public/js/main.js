@@ -3007,6 +3007,126 @@ function rankTile(rank, label, href) {
           </a>`;
 }
 
+// ─── CTF Challenges Leaderboard ─────────────────────────────────────────────
+// Two views of the same challenge_completions data: an overall top-10
+// (difficulty-weighted points, /api/ctf-leaderboard) shown on the /challenges
+// hub, and a per-module top-10 (parts completed, /api/challenges/:id/
+// leaderboard) shown on every module page (new-style and the two legacy
+// pages alike). Both are pure progressive enhancement, same spirit as
+// initChallengesHub()'s per-card progress badges — skipped for signed-out
+// visitors, and a fetch failure just leaves the section absent rather than
+// showing an error.
+const ctfMedal = r => (r === 1 ? '🥇' : r === 2 ? '🥈' : r === 3 ? '🥉' : `#${r}`);
+
+async function loadCtfHubLeaderboard() {
+  const wrap = document.getElementById('ctfLeaderboardWrap');
+  if (!wrap || !currentUser) return;
+  try {
+    const res = await fetch('/api/ctf-leaderboard');
+    if (!res.ok) throw new Error();
+    const data = await res.json();
+    renderCtfHubLeaderboard(data.top ?? [], data.me ?? {});
+  } catch {
+    wrap.closest('section')?.remove();
+  }
+}
+
+function renderCtfHubLeaderboard(top, me) {
+  const wrap = document.getElementById('ctfLeaderboardWrap');
+  if (!wrap) return;
+
+  if (!top.length) {
+    wrap.innerHTML = `
+      <div style="text-align:center;padding:1.5rem 1rem;color:var(--text-muted);font-family:'Share Tech Mono',monospace;background:var(--surface);border:1px solid var(--border);border-radius:6px;">
+        <p>No completions yet — solve a challenge part to claim the top spot!</p>
+      </div>`;
+    return;
+  }
+
+  const rows = top.map(row => {
+    const isMe = !me.isGuest && row.username === me.username;
+    return `
+      <tr class="${isMe ? 'lb-me' : ''}">
+        <td class="lb-rank">${ctfMedal(row.rank)}</td>
+        <td class="lb-user">
+          <a class="lb-user-cell" href="/u/${encodeURIComponent(row.username)}">
+            <img class="lb-avatar" src="${escHtml(row.avatar || DEFAULT_AVATAR)}" alt="">
+            <span>${escHtml(row.username)}</span>${isMe ? ' <span class="lb-you">you</span>' : ''}
+          </a>
+        </td>
+        <td class="lb-pts">${row.points}</td>
+        <td class="lb-sub">${row.count}</td>
+      </tr>`;
+  }).join('');
+
+  const meInTop = !me.isGuest && top.some(r => r.username === me.username);
+  const footer = me.isGuest
+    ? `<p class="lb-footnote">Guest scores aren't ranked — create an account to compete.</p>`
+    : (meInTop ? '' : `<p class="lb-footnote">You: <strong>${me.points ?? 0}</strong> point${me.points === 1 ? '' : 's'} across ${me.count ?? 0} part${me.count === 1 ? '' : 's'}${me.rank ? ` — rank #${me.rank}` : ' — solve a part to get on the board!'}</p>`);
+
+  wrap.innerHTML = `
+    <div style="overflow-x:auto;">
+      <table class="lb-table">
+        <thead>
+          <tr><th>Rank</th><th>User</th><th>Points</th><th>Parts</th></tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    ${footer}`;
+}
+
+async function loadModuleLeaderboard(challengeId) {
+  if (!currentUser) return;
+  try {
+    const res = await fetch(`/api/challenges/${challengeId}/leaderboard`);
+    if (!res.ok) return;
+    renderModuleLeaderboard(await res.json());
+  } catch { /* skip silently — this is a pure enhancement */ }
+}
+
+function renderModuleLeaderboard(data) {
+  const { top = [], me = {}, totalParts = 0 } = data;
+  if (!top.length) return; // nobody's completed anything here yet — don't clutter the page
+
+  const anchor = document.querySelector('.lac-module-nav');
+  if (!anchor?.parentElement) return;
+
+  const rows = top.map(row => {
+    const isMe = !me.isGuest && row.username === me.username;
+    return `
+      <tr class="${isMe ? 'lb-me' : ''}">
+        <td class="lb-rank">${ctfMedal(row.rank)}</td>
+        <td class="lb-user">
+          <a class="lb-user-cell" href="/u/${encodeURIComponent(row.username)}">
+            <img class="lb-avatar" src="${escHtml(row.avatar || DEFAULT_AVATAR)}" alt="">
+            <span>${escHtml(row.username)}</span>${isMe ? ' <span class="lb-you">you</span>' : ''}
+          </a>
+        </td>
+        <td class="lb-sub">${row.count}/${totalParts}${row.complete ? ' <span class="progress-star" aria-hidden="true">★</span>' : ''}</td>
+      </tr>`;
+  }).join('');
+
+  const meInTop = !me.isGuest && top.some(r => r.username === me.username);
+  const footer = me.isGuest
+    ? `<p class="lb-footnote">Guest progress isn't ranked — create an account to compete.</p>`
+    : (meInTop || !me.count ? '' : `<p class="lb-footnote">You: <strong>${me.count}</strong>/${totalParts} parts complete — keep going to climb the board!</p>`);
+
+  const section = document.createElement('section');
+  section.className = 'instructor-section';
+  section.id = 'moduleLeaderboardSection';
+  section.innerHTML = `
+      <h2 class="instructor-section-heading">// Leaderboard</h2>
+      <div style="overflow-x:auto;">
+        <table class="lb-table">
+          <thead><tr><th>Rank</th><th>User</th><th>Progress</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      ${footer}`;
+  anchor.parentElement.insertBefore(section, anchor);
+}
+
 async function loadProfileAccount() {
   const accountWrap = document.getElementById('accountWrap');
   const historyWrap = document.getElementById('roomHistoryWrap');
@@ -3858,11 +3978,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   } else if (window.location.pathname === '/log-analysis-challenge') {
     initChallengeAnswerKeyToggle();
     initChallengeSubmissions('log-analysis-regex');
+    loadModuleLeaderboard('log-analysis-regex');
   } else if (window.location.pathname === '/network-traffic-challenge') {
     initChallengeAnswerKeyToggle();
     initChallengeSubmissions('wireshark-nta');
+    loadModuleLeaderboard('wireshark-nta');
   } else if (window.location.pathname === '/challenges') {
     initChallengesHub();
+    loadCtfHubLeaderboard();
   } else if (/^\/challenges\/[\w-]+$/.test(window.location.pathname)) {
     // Generic module page — the challenge id is server-injected into
     // <body data-challenge-id>, so this one branch covers every new-style
@@ -3872,6 +3995,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (challengeId) {
       initChallengeAnswerKeyToggle();
       initChallengeSubmissions(challengeId);
+      loadModuleLeaderboard(challengeId);
     }
   }
 });

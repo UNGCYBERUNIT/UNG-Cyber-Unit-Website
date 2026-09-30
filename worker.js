@@ -2040,6 +2040,22 @@ const CHALLENGE_PARTS = Object.fromEntries(
   ctfModules.map(m => [m.id, m.parts.map(p => (typeof p === 'string' ? p : p.id))])
 );
 
+// Difficulty-weighted point value per challenge part, used only by the CTF
+// leaderboard endpoints below (challenge_completions has no score column of
+// its own, unlike quiz_results/quiz_room_attempts, so points are computed
+// here rather than summed in SQL). Legacy modules' parts are plain id
+// strings with no difficulty annotation — they default to the easy tier.
+const PART_DIFFICULTY_POINTS = { easy: 10, medium: 20, hard: 30 };
+const CHALLENGE_PART_POINTS = Object.fromEntries(
+  ctfModules.map(m => [
+    m.id,
+    Object.fromEntries(m.parts.map(p => [
+      typeof p === 'string' ? p : p.id,
+      PART_DIFFICULTY_POINTS[typeof p === 'string' ? 'easy' : (p.difficulty ?? 'easy')] ?? PART_DIFFICULTY_POINTS.easy,
+    ])),
+  ])
+);
+
 const MAX_ANSWER_SUBMIT_LEN = 200;
 
 function normalizeAnswer(s) {
@@ -3228,6 +3244,96 @@ export default {
           username: session.username,
           points: meRow?.points ?? 0,
           count: meRow?.count ?? 0,
+          isGuest: (session.role ?? 'member') === 'guest',
+        },
+      });
+    }
+
+    // GET /api/ctf-leaderboard — top performers across all CTF challenge
+    // modules, difficulty-weighted points (CHALLENGE_PART_POINTS). Same
+    // auth/guest-exclusion shape as /api/leaderboard above, but
+    // challenge_completions has no score column, so points are computed
+    // here in JS rather than summed in SQL. Powers the leaderboard shown on
+    // the /challenges hub.
+    if (path === '/api/ctf-leaderboard' && request.method === 'GET') {
+      if (!env.JWT_SECRET || !env.DB) return jsonResponse({ error: 'Server not configured' }, 503);
+      const session = await getSession(request, env);
+      if (!session) return jsonResponse({ error: 'Not authenticated' }, 401);
+
+      const { results: rows } = await env.DB.prepare(`
+        SELECT u.id AS user_id, u.username, u.avatar, cc.challenge_id, cc.part_id
+        FROM challenge_completions cc
+        JOIN users u ON u.id = cc.user_id
+        WHERE u.role != 'guest'
+      `).all();
+
+      const byUser = new Map();
+      for (const r of rows ?? []) {
+        const points = CHALLENGE_PART_POINTS[r.challenge_id]?.[r.part_id] ?? 0;
+        if (!byUser.has(r.user_id)) {
+          byUser.set(r.user_id, { username: r.username, avatar: r.avatar ?? null, points: 0, count: 0 });
+        }
+        const entry = byUser.get(r.user_id);
+        entry.points += points;
+        entry.count += 1;
+      }
+
+      const ranked = [...byUser.values()].sort((a, b) =>
+        b.points - a.points || b.count - a.count || a.username.localeCompare(b.username)
+      );
+      const myIndex = ranked.findIndex(r => r.username === session.username);
+
+      return jsonResponse({
+        top: ranked.slice(0, 10).map((r, i) => ({ rank: i + 1, ...r })),
+        me: {
+          username: session.username,
+          points: myIndex === -1 ? 0 : ranked[myIndex].points,
+          count: myIndex === -1 ? 0 : ranked[myIndex].count,
+          rank: myIndex === -1 ? null : myIndex + 1,
+          isGuest: (session.role ?? 'member') === 'guest',
+        },
+      });
+    }
+
+    // GET /api/challenges/:id/leaderboard — top performers for a single CTF
+    // module. Ranked by parts completed, not points — within one module
+    // every player is racing the same fixed part set, so a simple "how much
+    // of it have you cleared" count is the honest metric; ties broken by
+    // who most recently completed a part first (earliest finisher wins).
+    const ctfModuleLeaderboardMatch = path.match(/^\/api\/challenges\/([a-z0-9-]+)\/leaderboard$/);
+    if (ctfModuleLeaderboardMatch && request.method === 'GET') {
+      if (!env.JWT_SECRET || !env.DB) return jsonResponse({ error: 'Server not configured' }, 503);
+      const session = await getSession(request, env);
+      if (!session) return jsonResponse({ error: 'Not authenticated' }, 401);
+
+      const challengeId = ctfModuleLeaderboardMatch[1];
+      const totalParts = CHALLENGE_PARTS[challengeId]?.length ?? 0;
+      if (!totalParts) return notFoundResponse();
+
+      const { results: rows } = await env.DB.prepare(`
+        SELECT u.username, u.avatar, COUNT(*) AS count, MAX(cc.completed_at) AS last_at
+        FROM challenge_completions cc
+        JOIN users u ON u.id = cc.user_id
+        WHERE cc.challenge_id = ? AND u.role != 'guest'
+        GROUP BY u.id
+        ORDER BY count DESC, last_at ASC, u.username ASC
+        LIMIT 10
+      `).bind(challengeId).all();
+
+      const meRow = await env.DB.prepare(
+        'SELECT COUNT(*) AS count FROM challenge_completions WHERE user_id = ? AND challenge_id = ?'
+      ).bind(session.sub, challengeId).first();
+
+      return jsonResponse({
+        challengeId,
+        totalParts,
+        top: (rows ?? []).map((r, i) => ({
+          rank: i + 1, username: r.username, avatar: r.avatar ?? null, count: r.count, complete: r.count >= totalParts,
+        })),
+        me: {
+          username: session.username,
+          count: meRow?.count ?? 0,
+          complete: (meRow?.count ?? 0) >= totalParts,
           isGuest: (session.role ?? 'member') === 'guest',
         },
       });
