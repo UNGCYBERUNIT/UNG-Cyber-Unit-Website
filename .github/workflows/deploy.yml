@@ -21,7 +21,7 @@ jobs:
           # Pin wrangler to match local dev and be explicit about the command so
           # the Worker *script* is always deployed (not just assets). If the API
           # token lacks "Workers Scripts: Edit" this step fails loudly here.
-          wranglerVersion: '4.111.0'
+          wranglerVersion: '4.145.0'
           command: deploy
       - name: Verify the deployed Worker is live
         run: |
