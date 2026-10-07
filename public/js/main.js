@@ -1300,7 +1300,7 @@ async function initAdminPanel() {
 
 // Append-only audit trail — read-only UI, cursor-paginated ("Load more").
 // No edit/delete affordance here, ever: the log has no PATCH/DELETE route
-// server-side (see logAudit() in worker.js), and this UI must not imply one.
+// server-side (see logAudit() in src/lib/audit.js), and this UI must not imply one.
 async function loadAuditLog() {
   const wrap = document.getElementById('auditLogTableWrap');
   const moreBtn = document.getElementById('auditLogLoadMoreBtn');

@@ -1,5 +1,12 @@
 # Feature Roadmap — Proposed (Not Yet Implemented)
 
+> **Note (2026-10-07):** `worker.js` was split into `src/lib/*.js`,
+> `src/data/*.js`, and `src/routes/*.js` modules on this date (see
+> `CLAUDE.md`'s opening section and README.md's "Project Structure"). Every
+> `worker.js` line-number reference in the plan docs below predates that
+> split and is now approximate/historical — the named functions still exist,
+> just in a different file.
+
 Ten feature plans across four tracks (content depth, instructor/admin
 tooling, social/community, cross-repo integrations) — the first nine written
 2026-08-03, the tenth ([[plan-discord-pairing]]) added 2026-09-17. Each has

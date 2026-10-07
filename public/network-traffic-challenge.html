@@ -138,7 +138,7 @@
 
       <!-- Instructor-only; revealed by main.js after /api/auth/me confirms the
            instructor role. The answer key itself is never a static asset (see
-           GET /api/challenges/:id/answer-key in worker.js) so it can't leak
+           GET /api/challenges/:id/answer-key in src/routes/challenges.js) so it can't leak
            via the public GitHub repo. -->
       <section class="instructor-section" id="answerKeySection" hidden>
         <h2 class="instructor-section-heading">// Instructor Answer Key</h2>

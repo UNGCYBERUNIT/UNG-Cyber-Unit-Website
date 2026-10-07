@@ -1,9 +1,40 @@
 # CyberUnit @ UNG — working notes
 
 Interactive cybersecurity education site on **Cloudflare Workers + D1**. The
-only entry point is **`worker.js`** (routing, API, auth, security headers,
-per-page SEO injection). There is no bundler/build step — `npx wrangler dev`
-runs `worker.js` directly against `./public`.
+only entry point `wrangler.toml`'s `main` points at is still **`worker.js`**
+at the repo root, but as of 2026-10-07 it's a thin ~340-line dispatcher —
+`fetch()`/`scheduled()` plus a re-export block so unit-test imports keep
+resolving. All actual implementation (every route handler, shared helpers,
+content data) lives under **`src/`**:
+
+- `src/lib/*.js` — cross-cutting helpers every domain can depend on, never
+  each other's siblings' domain logic: `http.js` (jsonResponse,
+  addSecurityHeaders, notFoundResponse, parseCookies, clientIP,
+  timingSafeEqual, base64ImageMatchesType), `render.js` (re-exports
+  escapeHtml/renderContent/getTopicSVG from `public/js/topic-render.js` —
+  the one place anything under `src/` reaches into `public/js`), `auth.js`
+  (password hashing, JWT sign/verify, session/role helpers,
+  authActionPageResponse, checkBotSecret), `lab-auth.js` (the Web
+  Exploitation Lab's intentionally-forgeable tokens — kept isolated from
+  `auth.js` on purpose, see that section below), `ratelimit.js` (all six
+  check/record rate-limit pairs), `email.js` (sendResendEmail), `audit.js`
+  (logAudit), `util.js` (date/streak math, room codes, CSV/JSON question
+  parsing, leaderboardRank).
+- `src/data/topics.js` / `src/data/challenges.js` — the `topics[]` /
+  `ctfModules[]` content arrays plus their render helpers (topicCard,
+  homeTopicCards, pathwayHtml, challengeCard, etc.).
+- `src/routes/*.js` — one file per API/page domain (auth, profile, discord,
+  users, admin, announcements, events, feedback, rooms, question-bank,
+  instructor, topics, challenges, web-exploitation, seo, pages). Each
+  exports a single `handleXRoutes(request, env, url, path, secureCookie)`
+  that returns a `Response` on a match or `null` to fall through to the
+  next domain — `worker.js`'s `fetch()` is just these calls in sequence,
+  in the same precedence order the routes always had.
+
+There is no bundler/build step — Cloudflare Workers support native
+multi-file ES modules, so `npx wrangler dev`/`wrangler deploy` read this
+multi-file tree directly against `./public`, same as they read a single
+file. See README.md's "Project Structure" section for the full map.
 
 *(An earlier `server.js` Express prototype — static topic pages only, no
 auth/D1/Quiz Rooms — was removed on 2026-07-30 once it no longer reflected
@@ -36,12 +67,12 @@ docs, it's gone; don't recreate it.)*
   module semantics. `about.js`/`start.js` stay classic scripts; they don't import
   anything.
 - If it should rank in search: **add its path to the sitemap** (the `paths` array in
-  the `/sitemap.xml` route in `worker.js`) and give it a unique `<title>` +
+  the `/sitemap.xml` route in `src/routes/seo.js`) and give it a unique `<title>` +
   `<meta name="description">`.
 - If it's a private/app page (auth-gated): add `<meta name="robots" content="noindex">`
   and do NOT list it in the sitemap.
 
-**Adding a topic:** add it to the `topics` array in `worker.js`. The sitemap, the
+**Adding a topic:** add it to the `topics` array in `src/data/topics.js`. The sitemap, the
 per-topic `<title>`/description/OG/`BreadcrumbList`, and the homepage grid all derive
 from that array automatically. Two things that do NOT auto-update:
 - **The Beginner Pathway** (`/start`): a new topic won't appear until you add its id to a
@@ -49,19 +80,20 @@ from that array automatically. Two things that do NOT auto-update:
 - **Topic hook/takeaway**: add an entry in the `topicFraming` map (keyed by topic id) so
   the topic page gets its mentor intro + key takeaway.
 - **Cheat-sheet PDF** (optional): the "Download Cheat-Sheet" button on `/topic/:id` only
-  shows for topic ids in the `topicsWithCheatSheet` set in `worker.js`. Drop the PDF at
+  shows for topic ids in the `topicsWithCheatSheet` set in `src/data/topics.js`. Drop the PDF at
   `public/cheatsheets/<id>.pdf` and add the id to that set — no other code changes needed,
   it's served at `/cheatsheet/:id` following the same pattern as `/sop`.
 
 **Homepage topic grid** and the **`/start` pathway** are server-rendered by the worker
-(`homeTopicCards()` on `path === '/'`, `pathwayHtml()` on `path === '/start'`) so crawlers
-see the content without JS. `main.js`/`start.js` then enhance with per-user progress and
-leave the server-rendered cards intact if that fetch fails. Both share the `topicCard()`
-"module" component (worker-only — the client re-fetches via `/api/topics` rather than
-needing its own copy). **`/topic/:id` lesson content is also server-rendered**, via
-`renderContent()` + its 16 `render*` helpers + `getTopicSVG()` — these live in
-`public/js/topic-render.js`, a small dependency-free ES module with no DOM/browser API
-calls, imported by both `worker.js` (server render, for crawlers/no-JS) and
+(`homeTopicCards()`/`topicCard()` in `src/data/topics.js`, called from `src/routes/pages.js`
+on `path === '/'`; `pathwayHtml()` likewise on `path === '/start'`) so crawlers see the
+content without JS. `main.js`/`start.js` then enhance with per-user progress and leave the
+server-rendered cards intact if that fetch fails — the client re-fetches via `/api/topics`
+rather than needing its own copy of `topicCard()`. **`/topic/:id` lesson content is also
+server-rendered**, via `renderContent()` + its 16 `render*` helpers + `getTopicSVG()` — these
+live in `public/js/topic-render.js`, a small dependency-free ES module with no DOM/browser API
+calls, imported by both `src/lib/render.js` (the one crossing point from `src/` into
+`public/js/`, used server-side by `src/routes/pages.js` for crawlers/no-JS) and
 `public/js/main.js` (client render, adds per-user progress). One source of truth — no
 more hand-syncing two copies. (This split is *why* `public/js/main.js`'s `<script>` tag
 needs `type="module"`: see the `<head>` of any `public/*.html` page.)
@@ -81,7 +113,7 @@ opened, not by hiding the link. `/members` is different: it's a browsable list g
 `is_public = 1` users only, so it never links to a private profile in the first place.
 
 **Web Exploitation Lab** (see `docs/plan-intermediate-track.md`): the "Breach the Portal" CTF
-module's login endpoint (`POST /api/lab/web-exploitation/login` in worker.js) is a **real, live
+module's login endpoint (`POST /api/lab/web-exploitation/login` in `src/routes/web-exploitation.js`) is a **real, live
 SQL injection vulnerability** — the query is built with raw string concatenation on purpose,
 not a simulation. This is only safe because it runs against `env.WEBEXPLOIT_DB`, a **second,
 physically separate D1 database** (its own `[[d1_databases]]` binding in `wrangler.toml`,
@@ -108,7 +140,7 @@ originally saved from (often exactly why an instructor saves one, right before d
 throwaway room). `POST /api/rooms` accepts a `template_id` form field as an alternative to
 the uploaded `file` field for question source.
 
-**Admin audit log** (see `docs/plan-audit-log.md`): `logAudit()` in worker.js writes an
+**Admin audit log** (see `docs/plan-audit-log.md`): `logAudit()` in `src/lib/audit.js` writes an
 append-only row to `audit_log` for the five destructive/privilege-altering mutations in the
 app — role change (`PATCH /api/admin/users/:id`), user delete (`DELETE
 /api/admin/users/:id`), announcement create/edit/delete, and room delete (`DELETE
@@ -134,7 +166,7 @@ Discord account can only ever be linked to one website account.
 
 **Email verification (general-purpose, role-decoupled):** any signed-in non-guest member can
 confirm any email address on their account via `/api/auth/verify-email/request` +
-`/api/auth/verify-email/confirm` (worker.js) — no domain restriction, and confirming does
+`/api/auth/verify-email/confirm` (`src/routes/auth.js`) — no domain restriction, and confirming does
 **not** grant any role by itself. It's purely an identity/recovery marker (also backing
 forgot-password/forgot-username below). `users.role` still has a `'student'` tier (ranked
 above `member`, below `instructor` in `ROLE_RANK`, gates Quiz Rooms with
@@ -145,14 +177,14 @@ UNG-specific feature that hasn't been designed yet — don't wire it back up wit
 with the user first, it was deliberately decoupled.
 
 Role lives in the session JWT, not re-checked against the DB per request —
-`refreshRoleIfStale()` in worker.js reissues the cookie from `/api/auth/me` and
+`refreshRoleIfStale()` in `src/lib/auth.js` reissues the cookie from `/api/auth/me` and
 `/api/profile` (both already polled on every page load) whenever the DB role has moved past
 the cookie's (e.g. after an admin promotes someone), so the browser doesn't need a
 log-out/in to pick it up.
 
 **Session revocation (`token_version`):** this reverses the statement just above — sessions
 are no longer *purely* stateless. `users.token_version` (schema.sql) is embedded in every
-issued session JWT as the `ver` claim, and `getSession()` in worker.js now does one extra D1
+issued session JWT as the `ver` claim, and `getSession()` in `src/lib/auth.js` now does one extra D1
 read per authenticated request — `SELECT token_version FROM users WHERE id = ?` — comparing
 it against the token's `ver` before accepting the session; a mismatch (or a missing user row)
 rejects the token outright, even though its signature and expiry are still valid. This closes
@@ -180,11 +212,11 @@ an email (`/api/auth/verify-email/confirm`, `/api/auth/reset-password`) must **n
 state on `GET`** — only render a page with a plain `<form method="POST">` (no JS, so no CSP
 concerns). University-grade mail security gateways commonly pre-fetch every link in an
 inbound email automatically before a human opens it; a mutating `GET` lets that automated
-crawler silently burn the real user's token. `authActionPageResponse()` in worker.js is the
+crawler silently burn the real user's token. `authActionPageResponse()` in `src/lib/auth.js` is the
 shared page-builder for these — follow this pattern for any future emailed action link.
 
 Verification/reset/reminder emails send via the Resend HTTP API (`sendResendEmail()` in
-worker.js, plain `fetch()`, no binding) rather than Cloudflare's own Email Sending — that's a
+`src/lib/email.js`, plain `fetch()`, no binding) rather than Cloudflare's own Email Sending — that's a
 paid product; Resend's free tier covers this app's volume. Needs the `RESEND_API_KEY` secret
 set (`wrangler secret put RESEND_API_KEY`) and `ungcyberunit.org` verified with Resend, or
 the send is silently skipped (the `if (env.RESEND_API_KEY)` guard) so local dev without the
@@ -196,7 +228,7 @@ instructor-only asset (e.g. a challenge answer key) must NOT go in `public/` —
 is visible in the repo's file tree/history to anyone, even if no page links to it. Instead
 store it as a BLOB in D1 (see the `challenge_answer_keys` table in `schema.sql`) and serve it
 from a dedicated `/api/...` route gated by `requireRole(request, env, 'instructor')`, e.g.
-`GET /api/challenges/:id/answer-key` in worker.js. To ingest a file: hex-encode it and
+`GET /api/challenges/:id/answer-key` in `src/routes/challenges.js`. To ingest a file: hex-encode it and
 `INSERT ... VALUES (..., X'<hex>', ...)` via `wrangler d1 execute DB --local/--remote --file`
 (a `--command` string is impractical past a few KB). **Gotcha:** D1 hands back a BLOB column
 as a plain byte array, not an ArrayBuffer — wrap it in `new Uint8Array(row.data)` before
@@ -206,13 +238,13 @@ source file itself out of the repo entirely (gitignored), since it's now living 
 
 **Same rule applies to short "answer" strings, not just whole files** (see
 `/log-analysis-challenge` and `/network-traffic-challenge`'s auto-graded submission forms,
-`POST /api/challenges/:id/submit` in worker.js): a correct-answer IP, count, or password is
+`POST /api/challenges/:id/submit` in `src/routes/challenges.js`): a correct-answer IP, count, or password is
 low-entropy enough that even a SHA-256 hash of it, sitting in the public repo, is crackable
 offline in seconds with a wordlist/mask attack — hashing doesn't save you here the way it
 does for real passwords. Store the accepted normalized answer(s) as **plaintext** rows in D1
 (`challenge_answers` — `challenge_id, part_id, answer_norm`, multiple rows per part for
 alternate phrasings) instead, compared server-side via `normalizeAnswer()`; never put the
-correct value in worker.js or any client-visible response. Completion state lives in
+correct value in any `src/` file or any client-visible response. Completion state lives in
 `challenge_completions` (`user_id, challenge_id, part_id`), and wrong submissions are rate
 limited per-user (`challenge_submit_rate_limit`, 15/10min) the same way `room_lookup_failures`
 throttles room-code guessing.

@@ -1,5 +1,5 @@
 // ─── Topic Content Rendering ───────────────────────────────────────────────
-// Shared between worker.js (server-side render for crawlers/no-JS) and
+// Shared between src/lib/render.js (server-side render for crawlers/no-JS) and
 // public/js/main.js (client-side render). Pure string-builders only — no
 // DOM/browser APIs — so this one file works unmodified in both the Workers
 // runtime and the browser. See CLAUDE.md for why this split exists.

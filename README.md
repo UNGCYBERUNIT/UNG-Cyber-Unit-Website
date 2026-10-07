@@ -102,7 +102,7 @@ cybersec-basics/
 │   ├── challenges/log-analysis-regex/  # Static downloads for the page above (zip/pdf/pptx) — `Disallow`ed in robots.txt
 │   ├── network-traffic-challenge.html  # Downloadable workshop: Wireshark NTA live demo, capture file, slides
 │   ├── challenges/wireshark-nta/  # Static downloads for the page above (pcapng/pptx) — `Disallow`ed in robots.txt
-│   ├── challenges.html    # CTF hub grid (server-rendered from `ctfModules` in worker.js)
+│   ├── challenges.html    # CTF hub grid (server-rendered from `ctfModules` in src/data/challenges.js)
 │   ├── challenge-module.html  # Shared shell for every generic /challenges/:id module page
 │   ├── challenges/crypto-layers/, challenges/hidden-in-plain-sight/, challenges/crack-the-vault/  # Downloadable puzzle artifacts for those three modules
 │   ├── lab/web-exploitation-portal.html  # Live target for the "Breach the Portal" module — genuinely SQL-injectable, see CLAUDE.md
@@ -112,8 +112,28 @@ cybersec-basics/
 │       ├── main.js          # Nav/auth/profile/quiz/admin-panel client logic, per-page init dispatch
 │       ├── start.js          # /start pathway page enhancement
 │       ├── lab-web-exploitation.js  # Standalone script for the web-exploitation lab's login form (no imports, not part of main.js's dispatch)
-│       └── topic-render.js  # Isomorphic: topic lesson-content renderer, imported by both worker.js and main.js
-├── worker.js              # Cloudflare Worker — the only entry point: routing, API, auth, security headers
+│       └── topic-render.js  # Isomorphic: topic lesson-content renderer, imported by both src/lib/render.js and main.js
+├── src/                    # All Worker implementation (worker.js itself is just the entry point — see below)
+│   ├── lib/                  # Cross-cutting helpers — never imported between each other's domain siblings in routes/
+│   │   ├── http.js             # jsonResponse, addSecurityHeaders, notFoundResponse, parseCookies, clientIP, timingSafeEqual, base64ImageMatchesType
+│   │   ├── render.js            # Re-exports escapeHtml/renderContent/getTopicSVG from public/js/topic-render.js — the one place src/ crosses into public/js
+│   │   ├── auth.js             # Password hashing, JWT sign/verify, session/role helpers, authActionPageResponse, checkBotSecret
+│   │   ├── lab-auth.js          # Web Exploitation Lab's intentionally-forgeable "Remember Me" tokens — isolated from auth.js on purpose
+│   │   ├── ratelimit.js         # All six check/record sliding-window rate-limit pairs
+│   │   ├── email.js            # sendResendEmail
+│   │   ├── audit.js            # logAudit
+│   │   └── util.js             # Date/streak math, room codes, CSV/JSON question parsing, leaderboardRank
+│   ├── data/
+│   │   ├── topics.js           # `topics[]` content array, pathway data, topicFraming, and their render helpers (topicCard, homeTopicCards, pathwayHtml, topicMetaTags)
+│   │   └── challenges.js       # `ctfModules[]` content array and its render helpers (challengeCard, renderChallengeModule, challengesHubCards, etc.)
+│   └── routes/                # One file per API/page domain — each exports a single handleXRoutes(request, env, url, path, secureCookie) returning a Response or null
+│       ├── auth.js, profile.js, discord.js, users.js, admin.js, announcements.js, events.js, feedback.js
+│       ├── rooms.js            # Quiz Rooms — the largest single domain
+│       ├── question-bank.js, instructor.js, topics.js, challenges.js
+│       ├── web-exploitation.js # The intentionally-vulnerable lab — touches ONLY env.WEBEXPLOIT_DB
+│       ├── seo.js              # /robots.txt, /sitemap.xml
+│       └── pages.js            # HTML view routing + per-page SSR injection (topic/home/start/challenges)
+├── worker.js               # Cloudflare Worker entry point (wrangler.toml's `main`) — thin fetch()/scheduled() dispatcher delegating to src/routes/*.js, plus a re-export block for test/worker.test.mjs
 ├── schema.sql              # D1 schema for the main `DB` binding (users [incl. role/streak/last_active/is_public/discord_id], quiz_results, quiz_rooms, quiz_room_questions, quiz_room_attempts, quiz_room_answers, question_bank, question_bank_items, announcements, events, audit_log, feedback, challenge_answer_keys, challenge_answers, challenge_completions, and the room_lookup_failures/feedback_rate_limit/email_action_rate_limit/signup_rate_limit/challenge_submit_rate_limit sliding-window rate-limit tables)
 ├── webexploit-schema.sql   # D1 schema for the separate `WEBEXPLOIT_DB` binding — one table (`webexploit_employees`), synthetic lab data only, see CLAUDE.md's "Web Exploitation Lab" section
 ├── answer-keys/            # (gitignored) local source files for challenge_answer_keys — never committed, re-ingest via `wrangler d1 execute --file`
@@ -129,6 +149,12 @@ cybersec-basics/
 > had drifted far enough from current functionality (no login, progress
 > tracking, admin/instructor panels, or Quiz Rooms) that keeping it around as
 > a "preview" was actively misleading. `npm start` now runs `wrangler dev`.
+>
+> **Note:** on 2026-10-07, `worker.js`'s ~5,000 lines of routing/handler logic
+> were split out into the `src/` tree above — a pure reorganization (Cloudflare
+> Workers support native multi-file ES modules, so no bundler was needed and
+> no behavior changed). `worker.js` itself remains the entry point `wrangler.toml`
+> points at; it's just ~340 lines now instead of ~5,000.
 
 ---
 
@@ -148,7 +174,7 @@ cybersec-basics/
 | `/log-analysis-challenge` | Log Analysis & Regex workshop — five downloadable log-hunting challenges, the slide deck, and a regex quick-reference PDF (assets under `public/challenges/log-analysis-regex/`, `Disallow`ed in robots.txt). Instructors/admins also see a link to the answer key, served from `/api/challenges/:id/answer-key` above. |
 | `/network-traffic-challenge` | Network Traffic Analysis & Wireshark workshop — a live-demo Telnet-cleartext capture challenge, the class `.pcapng`, and the slide deck (assets under `public/challenges/wireshark-nta/`, `Disallow`ed in robots.txt). Instructors/admins also see a link to the answer key. |
 | `/challenges` | CTF challenge hub — server-rendered grid of every module (the two pages above plus every generic `/challenges/:id` module below), with a per-user completion badge |
-| `/challenges/:id` | Generic CTF module page (crypto-layers, hidden-in-plain-sight, crack-the-vault, web-exploitation) — briefing, downloads or live target, toolbox, multi-part flag submission, instructor answer key. Server-rendered from the `ctfModules` array in `worker.js`; unknown or legacy ids 404 |
+| `/challenges/:id` | Generic CTF module page (crypto-layers, hidden-in-plain-sight, crack-the-vault, web-exploitation) — briefing, downloads or live target, toolbox, multi-part flag submission, instructor answer key. Server-rendered from the `ctfModules` array in `src/data/challenges.js`; unknown or legacy ids 404 |
 | `/lab/web-exploitation-portal` | The "Breach the Portal" CTF module's live target — a fake employee login page, genuinely SQL-injectable by design (see `CLAUDE.md`'s "Web Exploitation Lab" section). `noindex` |
 | `/instructor` | Instructor panel — create/manage Quiz Rooms, grade free responses |
 | `/student-hub` | Student-only quiz rooms — gated to the admin-assigned `student` role and above |
@@ -172,7 +198,7 @@ cybersec-basics/
 | `/api/topic/:id` | JSON data for a single topic |
 | `/api/challenges/:id/answer-key` | Instructor+ only — downloads a challenge's answer key from D1 (`challenge_answer_keys` table), never a `public/` static asset since this repo is public on GitHub |
 | `/api/challenges/:id/progress` (GET) | Any session incl. guest — which part ids of a challenge this user has completed (`challenge_completions`); `[]` if signed out |
-| `/api/challenges/:id/submit` (POST) | Any session incl. guest — auto-graded free-text answer submission (`{partId, answer}`). Correct answers live only in D1 (`challenge_answers`), never in worker.js — even a hashed short answer would be offline-crackable once committed to this public repo. Per-user rate-limited on wrong answers (`challenge_submit_rate_limit`); records a completion on a match. |
+| `/api/challenges/:id/submit` (POST) | Any session incl. guest — auto-graded free-text answer submission (`{partId, answer}`). Correct answers live only in D1 (`challenge_answers`), never in any `src/` file — even a hashed short answer would be offline-crackable once committed to this public repo. Per-user rate-limited on wrong answers (`challenge_submit_rate_limit`); records a completion on a match. |
 | `/api/auth/register`, `/api/auth/login`, `/api/auth/logout`, `/api/auth/me` | Account auth. `/api/auth/me` also reports `hasUnreadAnnouncements` (always `false` for guests) — drives the nav badge. |
 | `/api/auth/sign-out-everywhere` (POST) | Bumps `users.token_version`, instantly invalidating every outstanding session for the caller's account (including the one making the request) — see CLAUDE.md's "Session revocation" section |
 | `/api/auth/guest` (POST) | Create a throwaway guest account (role `guest`, 2-hour session, no password) |
@@ -261,14 +287,16 @@ npm test
 ```
 
 Runs on Node's built-in test runner (`node --test`, no dependencies) against
-`test/worker.test.mjs` — currently 50 suites / 185 tests. Coverage falls
+`test/worker.test.mjs` — currently 85 suites / 315 tests. Coverage falls
 into four groups:
 
 - **Pure helpers** — `parseCookies`, `hashPassword`/`verifyPassword`, JWT
   sign/verify, `generateRoomCode`, `parseCSV`/`parseCSVLine`,
   `validateJSONQuestions`, `escapeHtml`, `dateStrUTC`, `nextStreak`,
   `pathwayBadges`, and the SEO/rendering helpers (`topicCard`, `pathwayHtml`,
-  `topicMetaTags`), all imported directly from `worker.js`.
+  `topicMetaTags`) — these now live under `src/lib/` and `src/data/`, but the
+  test file still imports all of them via `worker.js`'s re-export block, so
+  this list didn't need to change when the split happened.
 - **API routes against a mock D1** — a hand-rolled mock (`mockDB()` in the
   test file) records every `.prepare()`/`.bind()`/`.run()`/`.first()`/`.all()`
   call, so a test can assert *exactly* what SQL ran and with what bindings —
@@ -321,7 +349,7 @@ repo, but equally useful for a human contributor). Highlights:
 - **`/topic/:id` lesson content is rendered both server-side (for crawlers /
   no-JS) and client-side**, via a single shared source of truth:
   `public/js/topic-render.js` — a dependency-free ES module with no
-  DOM/browser APIs, imported by both `worker.js` and `public/js/main.js`.
+  DOM/browser APIs, imported by both `src/lib/render.js` and `public/js/main.js`.
   This used to be two hand-kept copies (which drifted out of sync once and
   caused a real Search Console Soft 404 — see `c205807`); if you're adding a
   new piece of content that needs to render identically on both sides,
@@ -348,18 +376,23 @@ repo, but equally useful for a human contributor). Highlights:
 
 Things worth knowing before extending this further:
 
-- **`worker.js` is a single ~180KB file** — routing, API handlers, auth,
-  security headers, and SEO/HTML rendering all live in it. There's no build
-  step, so this is deliberate (simpler deploy, no bundler), but it means new
-  routes should follow the existing `path.match(...)` dispatch pattern rather
-  than introducing a router abstraction — consistency matters more than DRY
-  here given the file's size.
+- **Routing/handler logic lives under `src/`, one file per API/page domain**
+  (see "Project Structure" above) — `worker.js` itself is just the
+  `fetch()`/`scheduled()` entry point and a test re-export block. This split
+  happened 2026-10-07, once the single-file version had grown to ~5,000
+  lines and become hard to navigate. There's still no build step — Cloudflare
+  Workers support native multi-file ES module imports, no bundler needed —
+  so adding a new route domain means adding a new `src/routes/*.js` file
+  exporting a `handleXRoutes(request, env, url, path, secureCookie)` function
+  and one delegation call in `worker.js`'s `fetch()`, following the existing
+  domain files rather than introducing a router abstraction or growing an
+  existing domain file past what one feature naturally needs.
 - **The isomorphic-module pattern used by `topic-render.js`** (see Best
   Practices above) is the template to reach for if another piece of
   server+client duplication shows up — a small, dependency-free ES module
-  with no DOM/browser APIs, imported by both `worker.js` (Workers natively
-  support ES module imports, no bundler config needed) and the relevant
-  `public/js/*.js` file (loaded as `type="module"`).
+  with no DOM/browser APIs, imported by both `src/lib/render.js` (Workers
+  natively support ES module imports, no bundler config needed) and the
+  relevant `public/js/*.js` file (loaded as `type="module"`).
 - **CSP allowlist is minimal on purpose** (`connect-src 'self'`, no wildcard
   origins). Any future third-party embed/script/API call needs an explicit,
   reviewed CSP addition in `addSecurityHeaders()` — treat that as a
