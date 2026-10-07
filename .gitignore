@@ -28,8 +28,11 @@ Thumbs.db
 *.swp
 *.swo
 
-# Security audit documents
+# Security/ops audit documents — one-off runbooks for a completed task,
+# not durable repo docs. Add future ones here rather than leaving them
+# untracked-by-omission at the root.
 ungcyberunit_security_remediation.md
+cloudflare-migration-verification.md
 
 # Challenge answer key source files — content lives in D1
 # (challenge_answer_keys table), never in the repo, since this GitHub repo is
@@ -37,9 +40,19 @@ ungcyberunit_security_remediation.md
 answer-keys/
 
 # Proposed-but-not-yet-built feature/curriculum plans — kept local until
-# acted on. docs/public-profile-plan.md is tracked (already built), so it
-# deliberately doesn't match this pattern.
+# acted on. Once a plan ships, it's un-ignored below and tracked as a
+# permanent design-decision record (docs/public-profile-plan.md was the
+# original example, named outside this glob; the explicit negations below
+# are the same exception applied to the plan-*.md naming convention).
 docs/plan-*.md
+!docs/plan-audit-log.md
+!docs/plan-cheat-sheets.md
+!docs/plan-difficulty-tags.md
+!docs/plan-discord-pairing.md
+!docs/plan-events-page.md
+!docs/plan-instructor-analytics.md
+!docs/plan-member-directory.md
+!docs/plan-question-bank.md
 
 # Build output (if added later)
 dist/
