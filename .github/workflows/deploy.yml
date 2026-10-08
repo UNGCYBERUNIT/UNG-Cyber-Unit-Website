@@ -25,9 +25,17 @@ jobs:
           command: deploy
       - name: Verify the deployed Worker is live
         run: |
-          # Hit the raw workers.dev URL (bypasses the zone's HTML cache) and
-          # confirm the server-rendered pathway is present. Fails the job if not.
-          url="https://ung-cyber-unit-website.joshuaacklen.workers.dev/start"
+          # Hit the production custom domain and confirm the server-rendered
+          # pathway is present. Fails the job if not. This used to hit the
+          # joshuaacklen.workers.dev subdomain directly to bypass the zone's
+          # HTML cache, but the 2026-09-30 Cloudflare account migration moved
+          # the site to a new account/subdomain and set workers_dev = false
+          # in wrangler.toml, disabling the workers.dev route entirely — that
+          # URL has been silently failing on every deploy since. Worker
+          # routes aren't HTML-cached by default (no Cache Rules configured),
+          # so hitting the real domain directly still reflects the live
+          # Worker; a cache-busting query param is added as extra insurance.
+          url="https://ungcyberunit.org/start?cachebust=${{ github.sha }}"
           count=$(curl -s --max-time 20 "$url" | grep -c 'pw-stage' || true)
           echo "pw-stage markers on $url: $count"
           if [ "$count" -lt 1 ]; then
