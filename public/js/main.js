@@ -2228,12 +2228,12 @@ async function initKanbanPage() {
     return `
       <div class="kanban-card" draggable="true" data-id="${item.id}">
         <div class="kanban-card-title">${escHtml(item.title)}</div>
-        <div class="kanban-card-meta">
+        <div class="kanban-card-tags">
           ${priorityBadge(item.priority)}
           <span>${escHtml(item.item_type)}</span>
-          ${item.assigned_username ? `<span>👤 ${escHtml(item.assigned_username)}</span>` : ''}
-          ${due ? `<span>📅 ${due}</span>` : ''}
         </div>
+        ${item.assigned_username ? `<div class="kanban-card-detail">👤 ${escHtml(item.assigned_username)}</div>` : ''}
+        ${due ? `<div class="kanban-card-detail">📅 ${due}</div>` : ''}
         ${children.length ? `<div class="kanban-subtasks">${children.filter(c => c.status === 'done').length}/${children.length} subtasks done</div>` : ''}
       </div>`;
   }

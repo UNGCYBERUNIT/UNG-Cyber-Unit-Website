@@ -2386,6 +2386,15 @@ footer {
 }
 
 .kanban-card-meta {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+/* Priority + type stay together on one row (they're short tags); assignee
+   and due date each get their own line below so they're never crammed next
+   to each other — same field always lands in the same place card to card. */
+.kanban-card-tags {
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem;
@@ -2393,6 +2402,14 @@ footer {
   font-family: 'Share Tech Mono', monospace;
   font-size: 0.72rem;
   color: var(--text-muted);
+}
+
+.kanban-card-detail {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-top: 0.3rem;
+  overflow-wrap: anywhere;
 }
 
 .kanban-priority {
