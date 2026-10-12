@@ -199,7 +199,13 @@ by username (case-insensitive); `parent` resolves by exact title match against t
 file first, then the existing board — either one failing to resolve is reported back, not
 treated as an import failure (the row still imports). No per-row assignment emails fire on
 import (a large CSV would otherwise mail-bomb the club) — only a manually created/edited card
-notifies its assignee.
+notifies its assignee. **CSV export** is the inverse — client-side only (built from the already-
+fetched `items`/`users` state in `initKanbanPage()`, no new API route), same 8-column shape the
+importer expects, resolving `assigned_to`/`parent_id` back to username/title the same way the
+importer resolves them forward, so an exported file re-imports unchanged. It's a full-board
+backup tool, not a "download my current view" one — it always exports every item regardless of
+the active search/filter/sort state. Reuses the exact formula-injection guard (leading `=`/`+`/
+`-`/`@` gets a defusing leading apostrophe) the Quiz Room results CSV export already uses.
 
 **Search/filter/sort** (client-side only, `public/js/main.js`'s `initKanbanPage()`): `isVisible()`
 (text search, with the "surface the parent if a subtask matches" exception noted above),

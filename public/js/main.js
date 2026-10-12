@@ -2586,6 +2586,37 @@ async function initKanbanPage() {
     }, 'Delete Card');
   });
 
+  // ── Export CSV ── Same 8-column shape the importer expects
+  // (title,description,status,priority,type,assignee,due_date,parent), so
+  // an exported file can be re-imported unchanged — this is a full-board
+  // backup/round-trip tool, not a "download my current filtered view" one,
+  // so it always exports every item regardless of the active search/filter.
+  document.getElementById('kanbanExportBtn').addEventListener('click', () => {
+    const idToTitle = new Map(items.map(i => [i.id, i.title]));
+    const headers = ['title', 'description', 'status', 'priority', 'type', 'assignee', 'due_date', 'parent'];
+    const rows = items.map(i => [
+      i.title,
+      i.description ?? '',
+      i.status,
+      i.priority,
+      i.item_type,
+      i.assigned_username ?? '',
+      i.due_date ? new Date(i.due_date * 1000).toISOString().slice(0, 10) : '',
+      i.parent_id ? (idToTitle.get(i.parent_id) ?? '') : '',
+    ]);
+    // Same formula-injection guard (Excel/Sheets can interpret a leading
+    // =/+/-/@ as a formula when the file is opened, not just viewed as
+    // text) as the existing Quiz Room results export.
+    const csvSafe = v => /^[=+\-@\t\r]/.test(v) ? `'${v}` : v;
+    const csv = [headers, ...rows]
+      .map(row => row.map(c => `"${csvSafe(String(c)).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    a.download = `kanban-export-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+  });
+
   // ── Import CSV ──
   const importModal = document.getElementById('kanbanImportModal');
   const importForm = document.getElementById('kanbanImportForm');
