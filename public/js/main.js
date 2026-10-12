@@ -2190,6 +2190,26 @@ async function initKanbanPage() {
   let calMonth = new Date();
   calMonth.setDate(1);
   let searchQuery = '';
+  const activeFilters = { priorities: new Set(), types: new Set(), assignee: '' };
+
+  // Unlike search's "surface the parent if a subtask matches" exception,
+  // filters apply directly to each item — a Priority filter should show
+  // only cards actually at that priority, not cards with some unrelated
+  // subtask at that priority.
+  function passesFilters(item) {
+    if (activeFilters.priorities.size && !activeFilters.priorities.has(item.priority)) return false;
+    if (activeFilters.types.size && !activeFilters.types.has(item.item_type)) return false;
+    if (activeFilters.assignee === 'unassigned' && item.assigned_to) return false;
+    if (activeFilters.assignee && activeFilters.assignee !== 'unassigned' && String(item.assigned_to) !== activeFilters.assignee) return false;
+    return true;
+  }
+
+  function updateFilterCount() {
+    const count = activeFilters.priorities.size + activeFilters.types.size + (activeFilters.assignee ? 1 : 0);
+    const badge = document.getElementById('kanbanFilterCount');
+    badge.textContent = count;
+    badge.hidden = count === 0;
+  }
 
   function matchesSearch(item, q) {
     return item.title.toLowerCase().includes(q) || (item.description || '').toLowerCase().includes(q);
@@ -2228,6 +2248,7 @@ async function initKanbanPage() {
       loadError.hidden = true;
       renderBoard();
       renderAssigneeOptions();
+      renderFilterAssigneeOptions();
       renderParentOptions();
       renderCalendar();
     } catch {
@@ -2259,7 +2280,7 @@ async function initKanbanPage() {
   function renderBoard() {
     const topLevel = items.filter(i => !i.parent_id);
     board.innerHTML = KANBAN_STATUSES.map(({ key, label }) => {
-      const colItems = topLevel.filter(i => i.status === key && isVisible(i)).sort((a, b) => a.sort_order - b.sort_order);
+      const colItems = topLevel.filter(i => i.status === key && isVisible(i) && passesFilters(i)).sort((a, b) => a.sort_order - b.sort_order);
       return `
         <div class="kanban-column">
           <div class="kanban-column-header"><span>${escHtml(label)}</span><span class="kanban-column-count">${colItems.length}</span></div>
@@ -2315,6 +2336,18 @@ async function initKanbanPage() {
     const sel = document.getElementById('kanbanAssignee');
     sel.innerHTML = '<option value="">Unassigned</option>' +
       users.map(u => `<option value="${u.id}">${escHtml(u.username)}</option>`).join('');
+  }
+
+  // Separate from renderAssigneeOptions() above — that one is the create/
+  // edit form's assignee picker ("Unassigned" means "set no assignee" on
+  // save). This one is the filter menu's, where "All" and "Unassigned" are
+  // both real filter states, not a default/empty value.
+  function renderFilterAssigneeOptions() {
+    const sel = document.getElementById('kanbanFilterAssignee');
+    const current = sel.value;
+    sel.innerHTML = '<option value="">All</option><option value="unassigned">Unassigned</option>' +
+      users.map(u => `<option value="${u.id}">${escHtml(u.username)}</option>`).join('');
+    sel.value = current;
   }
 
   function renderParentOptions() {
@@ -2377,6 +2410,40 @@ async function initKanbanPage() {
     searchQuery = e.target.value.trim();
     renderBoard();
     renderCalendar();
+  });
+
+  // ── Filter menu ──
+  wireNavDropdown('kanbanFilterBtn', 'kanbanFilterMenu');
+
+  function applyFiltersAndRerender() {
+    updateFilterCount();
+    renderBoard();
+    renderCalendar();
+  }
+
+  document.querySelectorAll('.kanban-filter-priority').forEach(cb => {
+    cb.addEventListener('change', () => {
+      activeFilters.priorities[cb.checked ? 'add' : 'delete'](cb.value);
+      applyFiltersAndRerender();
+    });
+  });
+  document.querySelectorAll('.kanban-filter-type').forEach(cb => {
+    cb.addEventListener('change', () => {
+      activeFilters.types[cb.checked ? 'add' : 'delete'](cb.value);
+      applyFiltersAndRerender();
+    });
+  });
+  document.getElementById('kanbanFilterAssignee').addEventListener('change', e => {
+    activeFilters.assignee = e.target.value;
+    applyFiltersAndRerender();
+  });
+  document.getElementById('kanbanFilterClearBtn').addEventListener('click', () => {
+    activeFilters.priorities.clear();
+    activeFilters.types.clear();
+    activeFilters.assignee = '';
+    document.querySelectorAll('.kanban-filter-priority, .kanban-filter-type').forEach(cb => { cb.checked = false; });
+    document.getElementById('kanbanFilterAssignee').value = '';
+    applyFiltersAndRerender();
   });
 
   document.getElementById('kanbanNewCardBtn').addEventListener('click', () => openModal(null));
@@ -2502,7 +2569,7 @@ async function initKanbanPage() {
     const firstDay = new Date(year, month, 1).getDay();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
     const byDay = {};
-    items.filter(i => i.due_date && isVisible(i)).forEach(i => {
+    items.filter(i => i.due_date && isVisible(i) && passesFilters(i)).forEach(i => {
       const d = new Date(i.due_date * 1000);
       if (d.getFullYear() === year && d.getMonth() === month) {
         (byDay[d.getDate()] ??= []).push(i);

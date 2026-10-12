@@ -51,6 +51,37 @@
 
       <div class="kanban-toolbar">
         <input type="search" id="kanbanSearchInput" placeholder="Search by title or description…" aria-label="Search tasks">
+
+        <div class="kanban-filter-wrap">
+          <button type="button" class="btn btn-sm" id="kanbanFilterBtn" aria-haspopup="true" aria-expanded="false">
+            Filter <span class="kanban-filter-count" id="kanbanFilterCount" hidden>0</span>
+          </button>
+          <div class="kanban-filter-menu" id="kanbanFilterMenu" hidden role="menu" aria-label="Filter tasks">
+            <div class="kanban-filter-group">
+              <p class="kanban-filter-label">Priority</p>
+              <label><input type="checkbox" class="kanban-filter-priority" value="highest"> Highest</label>
+              <label><input type="checkbox" class="kanban-filter-priority" value="high"> High</label>
+              <label><input type="checkbox" class="kanban-filter-priority" value="medium"> Medium</label>
+              <label><input type="checkbox" class="kanban-filter-priority" value="low"> Low</label>
+              <label><input type="checkbox" class="kanban-filter-priority" value="lowest"> Lowest</label>
+            </div>
+            <div class="kanban-filter-group">
+              <p class="kanban-filter-label">Type</p>
+              <label><input type="checkbox" class="kanban-filter-type" value="task"> Task</label>
+              <label><input type="checkbox" class="kanban-filter-type" value="story"> Story</label>
+              <label><input type="checkbox" class="kanban-filter-type" value="subtask"> Subtask</label>
+              <label><input type="checkbox" class="kanban-filter-type" value="epic"> Epic</label>
+            </div>
+            <div class="kanban-filter-group">
+              <p class="kanban-filter-label">Assignee</p>
+              <select id="kanbanFilterAssignee">
+                <option value="">All</option>
+                <option value="unassigned">Unassigned</option>
+              </select>
+            </div>
+            <button type="button" class="btn btn-sm" id="kanbanFilterClearBtn">Clear Filters</button>
+          </div>
+        </div>
       </div>
 
       <!-- ─── Board view ──────────────────────────────────── -->
