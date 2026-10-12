@@ -2417,6 +2417,15 @@ async function initKanbanPage() {
 
   function closeModal() { modal.hidden = true; }
 
+  // Esc discards whatever's in the form and closes without saving — same
+  // as clicking the ✕ or outside the modal, just from the keyboard.
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && !modal.hidden) {
+      e.preventDefault();
+      closeModal();
+    }
+  });
+
   document.getElementById('kanbanSearchInput').addEventListener('input', e => {
     searchQuery = e.target.value.trim();
     renderBoard();
