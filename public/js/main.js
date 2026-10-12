@@ -2189,6 +2189,24 @@ async function initKanbanPage() {
   let editingId = null;
   let calMonth = new Date();
   calMonth.setDate(1);
+  let searchQuery = '';
+
+  function matchesSearch(item, q) {
+    return item.title.toLowerCase().includes(q) || (item.description || '').toLowerCase().includes(q);
+  }
+
+  // Whether an item should show up under the current search — case-
+  // insensitive substring match against title or description. Subtasks
+  // never render as their own board/calendar entries (they only ever show
+  // inside their parent's modal), so a top-level item also counts as a
+  // match if any of its subtasks match — otherwise searching for text that
+  // only exists in a subtask would make that subtask unreachable.
+  function isVisible(item) {
+    if (!searchQuery) return true;
+    const q = searchQuery.toLowerCase();
+    if (matchesSearch(item, q)) return true;
+    return items.some(i => i.parent_id === item.id && matchesSearch(i, q));
+  }
 
   const board = document.getElementById('kanbanBoard');
   const calendarWrap = document.getElementById('kanbanCalendar');
@@ -2241,7 +2259,7 @@ async function initKanbanPage() {
   function renderBoard() {
     const topLevel = items.filter(i => !i.parent_id);
     board.innerHTML = KANBAN_STATUSES.map(({ key, label }) => {
-      const colItems = topLevel.filter(i => i.status === key).sort((a, b) => a.sort_order - b.sort_order);
+      const colItems = topLevel.filter(i => i.status === key && isVisible(i)).sort((a, b) => a.sort_order - b.sort_order);
       return `
         <div class="kanban-column">
           <div class="kanban-column-header"><span>${escHtml(label)}</span><span class="kanban-column-count">${colItems.length}</span></div>
@@ -2354,6 +2372,12 @@ async function initKanbanPage() {
   }
 
   function closeModal() { modal.hidden = true; }
+
+  document.getElementById('kanbanSearchInput').addEventListener('input', e => {
+    searchQuery = e.target.value.trim();
+    renderBoard();
+    renderCalendar();
+  });
 
   document.getElementById('kanbanNewCardBtn').addEventListener('click', () => openModal(null));
   document.getElementById('kanbanModalCloseBtn').addEventListener('click', closeModal);
@@ -2478,7 +2502,7 @@ async function initKanbanPage() {
     const firstDay = new Date(year, month, 1).getDay();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
     const byDay = {};
-    items.filter(i => i.due_date).forEach(i => {
+    items.filter(i => i.due_date && isVisible(i)).forEach(i => {
       const d = new Date(i.due_date * 1000);
       if (d.getFullYear() === year && d.getMonth() === month) {
         (byDay[d.getDate()] ??= []).push(i);
