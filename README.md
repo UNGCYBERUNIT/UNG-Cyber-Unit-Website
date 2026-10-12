@@ -240,7 +240,7 @@ cybersec-basics/
 | `/api/instructor/topic-completion` | Instructor — site-wide topic-quiz completion counts/avg. score, aggregated from `quiz_results` (no per-class scope — that concept doesn't exist yet) |
 | `/api/kanban/items` (GET/POST), `/api/kanban/items/:id` (PATCH/DELETE) | Instructor+ — shared Kanban board CRUD; any instructor/admin can edit/move/delete any card (not creator-restricted, same model as Announcements). Assigning a card emails the assignee if they have a verified address. Delete is audit-logged |
 | `/api/kanban/import` (POST) | Instructor+ — bulk-create cards from an uploaded CSV (multipart `file`, 1MB/500-row cap). All-or-nothing: any invalid row rejects the whole file, nothing written. Every field goes through the same validation as the manual create/edit API; no per-row assignment emails fire |
-| `/api/kanban/users` (GET) | Instructor+ — id/username-only picker list for the assignee dropdown (separate from the admin-only `/api/admin/users`) |
+| `/api/kanban/users` (GET) | Instructor+ — id/username-only picker list of instructor+ accounts (assignees are restricted to instructor+) for the assignee dropdown, separate from the admin-only `/api/admin/users` |
 | `/api/rooms/:code` (GET/PATCH/DELETE) | Instructor — view/edit/delete a room |
 | `/api/rooms/:code/attempts/:attemptId` (DELETE) | Instructor — reset a student's attempt |
 | `/api/rooms/:code/answers/:answerId` (PATCH) | Instructor — grade a free-response answer |

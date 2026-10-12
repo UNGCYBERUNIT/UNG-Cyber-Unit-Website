@@ -164,7 +164,14 @@ shared-content ownership, no per-creator check, same trust model as Announcement
 Rooms. One shared board, fixed status (`idea`/`todo`/`in_progress`/`in_review`/`done`) and
 priority (`lowest`/`low`/`medium`/`high`/`highest`) enums — no Jira-style custom workflows.
 `parent_id` gives one level of subtask nesting only (rendered as a checklist on the parent
-card, not its own column card). **Assignment notifications are email-only** — reuses
+card, not its own column card). **Assignees are restricted to instructor+ accounts** — `GET
+/api/kanban/users` (the picker list) and the CSV import's username resolution both filter to
+`role IN ('instructor', 'admin')`, and `POST`/`PATCH /api/kanban/items` independently re-check
+a new `assigned_to`'s role server-side (`assigneeIsInstructorPlus()`) rather than trusting the
+picker dropdown — a direct API call can't assign a member/student/guest id that was never
+offered in the UI. An already-assigned user whose role later drops below instructor isn't
+retroactively unassigned or re-validated on unrelated edits to that card — the check only
+runs when `assigned_to` is actually changing. **Assignment notifications are email-only** — reuses
 `sendResendEmail()` exactly like `verify-email`/`forgot-password` do, silently no-ops if the
 assignee has no verified `users.email` or `RESEND_API_KEY` isn't set. There is **no real push-
 notification infrastructure in this app** (no service worker, no VAPID keys) — don't add one

@@ -92,6 +92,16 @@ function parseKanbanCSV(text) {
   return { rows };
 }
 
+// Assignees are restricted to instructor+ (this is an internal planning
+// board — members/students never see it at all, so there'd be no one for a
+// member-assigned card to notify anyway). Re-checked here, not just
+// filtered out of the picker dropdowns, so a direct API call can't assign a
+// card to a member/student/guest id that was never offered in the UI.
+async function assigneeIsInstructorPlus(env, userId) {
+  const row = await env.DB.prepare('SELECT role FROM users WHERE id = ?').bind(userId).first();
+  return row?.role === 'instructor' || row?.role === 'admin';
+}
+
 async function notifyAssignee(env, { assignedTo, title, id }) {
   if (!assignedTo || !env.RESEND_API_KEY) return;
   const assignee = await env.DB.prepare('SELECT email, username FROM users WHERE id = ?').bind(assignedTo).first();
@@ -117,10 +127,11 @@ export async function handleKanbanRoutes(request, env, url, path, secureCookie) 
 
   // GET /api/kanban/users — instructor+ picker list (id/username only, no
   // role/email/other profile fields) for the assignee dropdown. Deliberately
-  // separate from GET /api/admin/users, which is admin-only.
+  // separate from GET /api/admin/users, which is admin-only. Scoped to
+  // instructor+ accounts only — see assigneeIsInstructorPlus() above for why.
   if (path === '/api/kanban/users' && request.method === 'GET') {
     const { results } = await env.DB.prepare(
-      'SELECT id, username FROM users ORDER BY username ASC'
+      "SELECT id, username FROM users WHERE role IN ('instructor', 'admin') ORDER BY username ASC"
     ).all();
     return jsonResponse({ results: results ?? [] });
   }
@@ -161,8 +172,11 @@ export async function handleKanbanRoutes(request, env, url, path, secureCookie) 
     // Resolve "assignee" usernames up front (case-insensitive) — an
     // unmatched username is not an error (see docs/plan-kanban-board.md's
     // Chunk 0: don't invent placeholder accounts), it just leaves the card
-    // unassigned, same as a blank assignee cell.
-    const { results: allUsers } = await env.DB.prepare('SELECT id, username FROM users').all();
+    // unassigned, same as a blank assignee cell. Only instructor+ accounts
+    // are eligible (same restriction as the manual create/edit assignee
+    // picker), so a CSV naming a member/student in its "assignee" column
+    // also just imports unassigned rather than being rejected.
+    const { results: allUsers } = await env.DB.prepare("SELECT id, username FROM users WHERE role IN ('instructor', 'admin')").all();
     const usernameToId = new Map((allUsers ?? []).map(u => [u.username.toLowerCase(), u.id]));
 
     // Validate every row through the exact same gate the manual create/edit
@@ -230,6 +244,9 @@ export async function handleKanbanRoutes(request, env, url, path, secureCookie) 
     try { body = await request.json(); } catch { return jsonResponse({ error: 'Invalid request body' }, 400); }
     const parsed = validateItemFields(body);
     if (parsed.error) return jsonResponse({ error: parsed.error }, 400);
+    if (parsed.assignedTo && !(await assigneeIsInstructorPlus(env, parsed.assignedTo))) {
+      return jsonResponse({ error: 'Assignee must be an instructor or admin' }, 400);
+    }
 
     const now = Date.now();
     const info = await env.DB.prepare(`
@@ -270,6 +287,9 @@ export async function handleKanbanRoutes(request, env, url, path, secureCookie) 
     const parsed = validateItemFields(merged);
     if (parsed.error) return jsonResponse({ error: parsed.error }, 400);
     if (!Number.isInteger(merged.sort_order)) return jsonResponse({ error: 'Invalid sort order' }, 400);
+    if (parsed.assignedTo && parsed.assignedTo !== existing.assigned_to && !(await assigneeIsInstructorPlus(env, parsed.assignedTo))) {
+      return jsonResponse({ error: 'Assignee must be an instructor or admin' }, 400);
+    }
 
     await env.DB.prepare(`
       UPDATE kanban_items

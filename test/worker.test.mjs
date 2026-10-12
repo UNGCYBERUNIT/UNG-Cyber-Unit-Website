@@ -3694,6 +3694,12 @@ describe('POST /api/kanban/import', () => {
     // First row's bindings: title, description, item_type, status, priority, sort_order, assigned_to, due_date, created_by, created_at
     assert.equal(insertBatch.bindings[0][0], 'Design the flyer');
     assert.equal(insertBatch.bindings[0][6], 7); // assigned_to resolved from "Bob" -> user id 7
+
+    // The username lookup itself must be scoped to instructor+ accounts —
+    // assignees are restricted the same way everywhere (manual form, filter
+    // menu, and CSV import).
+    const usersQuery = db.calls.find(c => c.op === 'all' && /SELECT id, username FROM users/.test(c.sql));
+    assert.match(usersQuery.sql, /WHERE role IN \('instructor', 'admin'\)/);
   });
 
   test('should link a subtask to a sibling row in the same CSV by title', async () => {
@@ -3750,6 +3756,44 @@ describe('GET /api/kanban/items', () => {
   }
 });
 
+// A mock D1 for the assignee-role check: resolves `SELECT role FROM users
+// WHERE id = ?` from a fixed id->role map, independent of everything else
+// (session role lookups, inserts) which behave like the plain mockDB().
+function mockKanbanAssigneeRoleDB(roleById) {
+  const calls = [];
+  const exec = (sql, bindings) => ({
+    sql, bindings,
+    run:   async () => { calls.push({ sql, bindings, op: 'run' });   return { meta: { last_row_id: 1, changes: 1 } }; },
+    first: async () => {
+      calls.push({ sql, bindings, op: 'first' });
+      if (/SELECT token_version FROM users WHERE id = \?/.test(sql)) return { token_version: 0 };
+      if (/SELECT role FROM users WHERE id = \?/.test(sql)) return roleById[bindings[0]] ? { role: roleById[bindings[0]] } : null;
+      if (/SELECT \* FROM kanban_items WHERE id = \?/.test(sql)) return { id: 5, title: 'x', description: '', item_type: 'task', status: 'idea', priority: 'medium', sort_order: 0, parent_id: null, assigned_to: null, due_date: null, created_by: 1, created_at: 1000 };
+      return null;
+    },
+    all:   async () => { calls.push({ sql, bindings, op: 'all' });   return { results: [] }; },
+  });
+  return {
+    calls,
+    prepare(sql) { return { bind: (...bindings) => exec(sql, bindings), ...exec(sql, null) }; },
+    async batch(stmts) { calls.push({ op: 'batch', sqls: stmts.map(s => s.sql) }); return stmts.map(() => ({ meta: { changes: 1 } })); },
+  };
+}
+
+describe('GET /api/kanban/users', () => {
+  test('should only list instructor+ accounts (assignees are restricted to instructor+)', async () => {
+    const db = mockDB();
+    const cookie = await sessionCookieFor({ sub: 1, username: 'inst', role: 'instructor' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/kanban/users', { headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 200);
+    const call = db.calls.find(c => c.op === 'all');
+    assert.match(call.sql, /WHERE role IN \('instructor', 'admin'\)/);
+  });
+});
+
 describe('POST /api/kanban/items', () => {
   const post = (body, cookie) => worker.fetch(
     new Request('https://example.com/api/kanban/items', {
@@ -3797,6 +3841,36 @@ describe('POST /api/kanban/items', () => {
   test('should create the item for an admin', async () => {
     const cookie = await sessionCookieFor({ sub: 1, username: 'admin1', role: 'admin' });
     const res = await post({ title: 'Renew Discord nitro' }, cookie);
+    assert.equal(res.status, 201);
+  });
+
+  test('should reject assigning to a member (assignees are instructor+ only)', async () => {
+    const db = mockKanbanAssigneeRoleDB({ 7: 'member' });
+    const cookie = await sessionCookieFor({ sub: 1, username: 'inst', role: 'instructor' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/kanban/items', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Cookie: cookie },
+        body: JSON.stringify({ title: 'Card', assigned_to: 7 }),
+      }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 400);
+    const data = await res.json();
+    assert.match(data.error, /instructor or admin/);
+  });
+
+  test('should allow assigning to an instructor', async () => {
+    const db = mockKanbanAssigneeRoleDB({ 7: 'instructor' });
+    const cookie = await sessionCookieFor({ sub: 1, username: 'inst', role: 'instructor' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/kanban/items', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Cookie: cookie },
+        body: JSON.stringify({ title: 'Card', assigned_to: 7 }),
+      }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
     assert.equal(res.status, 201);
   });
 });
@@ -3849,6 +3923,22 @@ describe('PATCH /api/kanban/items/:id', () => {
     const updateCall = db.calls.find(c => c.op === 'run' && /UPDATE kanban_items\s+SET/.test(c.sql));
     assert.ok(updateCall);
     assert.equal(updateCall.bindings[3], 'in_progress');
+  });
+
+  test('should reject re-assigning to a member (assignees are instructor+ only)', async () => {
+    const db = mockKanbanAssigneeRoleDB({ 7: 'member' });
+    const cookie = await sessionCookieFor({ sub: 1, username: 'inst', role: 'instructor' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/kanban/items/5', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Cookie: cookie },
+        body: JSON.stringify({ assigned_to: 7 }),
+      }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 400);
+    const data = await res.json();
+    assert.match(data.error, /instructor or admin/);
   });
 });
 
