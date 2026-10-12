@@ -2165,6 +2165,276 @@ async function initInstructorPanel() {
   }
 }
 
+// ─── Kanban Board (Jira replacement, see docs/plan-kanban-board.md) ────────────
+// Instructor+ only, both read and write — same shared-content ownership model
+// as Announcements (any instructor/admin may edit/move/delete any card, no
+// per-creator check). Fixed status/priority/item_type enums, one shared board.
+
+const KANBAN_STATUSES = [
+  { key: 'idea', label: 'Idea' },
+  { key: 'todo', label: 'To Do' },
+  { key: 'in_progress', label: 'In Progress' },
+  { key: 'in_review', label: 'In Review' },
+  { key: 'done', label: 'Done' },
+];
+
+async function initKanbanPage() {
+  if (!isInstructor()) {
+    window.location.replace('/');
+    return;
+  }
+
+  let items = [];
+  let users = [];
+  let editingId = null;
+  let calMonth = new Date();
+  calMonth.setDate(1);
+
+  const board = document.getElementById('kanbanBoard');
+  const calendarWrap = document.getElementById('kanbanCalendar');
+  const loadError = document.getElementById('kanbanLoadError');
+  const modal = document.getElementById('kanbanCardModal');
+  const form = document.getElementById('kanbanCardForm');
+  const formError = document.getElementById('kanbanFormError');
+  const deleteBtn = document.getElementById('kanbanDeleteBtn');
+
+  async function loadAll() {
+    try {
+      const [itemsRes, usersRes] = await Promise.all([
+        fetch('/api/kanban/items'),
+        fetch('/api/kanban/users'),
+      ]);
+      if (!itemsRes.ok || !usersRes.ok) throw new Error('Failed to load board');
+      items = (await itemsRes.json()).results;
+      users = (await usersRes.json()).results;
+      loadError.hidden = true;
+      renderBoard();
+      renderAssigneeOptions();
+      renderParentOptions();
+      renderCalendar();
+    } catch {
+      loadError.textContent = 'Failed to load the board. Try refreshing.';
+      loadError.hidden = false;
+    }
+  }
+
+  function priorityBadge(p) {
+    return `<span class="kanban-priority kanban-priority-${p}">${escHtml(p)}</span>`;
+  }
+
+  function cardHtml(item) {
+    const due = item.due_date ? new Date(item.due_date * 1000).toLocaleDateString() : '';
+    const children = items.filter(i => i.parent_id === item.id);
+    return `
+      <div class="kanban-card" draggable="true" data-id="${item.id}">
+        <div class="kanban-card-title">${escHtml(item.title)}</div>
+        <div class="kanban-card-meta">
+          ${priorityBadge(item.priority)}
+          <span>${escHtml(item.item_type)}</span>
+          ${item.assigned_username ? `<span>👤 ${escHtml(item.assigned_username)}</span>` : ''}
+          ${due ? `<span>📅 ${due}</span>` : ''}
+        </div>
+        ${children.length ? `<div class="kanban-subtasks">${children.filter(c => c.status === 'done').length}/${children.length} subtasks done</div>` : ''}
+      </div>`;
+  }
+
+  function renderBoard() {
+    const topLevel = items.filter(i => !i.parent_id);
+    board.innerHTML = KANBAN_STATUSES.map(({ key, label }) => {
+      const colItems = topLevel.filter(i => i.status === key).sort((a, b) => a.sort_order - b.sort_order);
+      return `
+        <div class="kanban-column">
+          <div class="kanban-column-header"><span>${escHtml(label)}</span><span class="kanban-column-count">${colItems.length}</span></div>
+          <div class="kanban-card-list" data-status="${key}">
+            ${colItems.map(cardHtml).join('')}
+          </div>
+        </div>`;
+    }).join('');
+
+    board.querySelectorAll('.kanban-card').forEach(card => {
+      card.addEventListener('click', () => openModal(parseInt(card.dataset.id, 10)));
+      card.addEventListener('dragstart', e => {
+        card.classList.add('dragging');
+        e.dataTransfer.setData('text/plain', card.dataset.id);
+      });
+      card.addEventListener('dragend', () => card.classList.remove('dragging'));
+    });
+
+    board.querySelectorAll('.kanban-card-list').forEach(list => {
+      list.addEventListener('dragover', e => {
+        e.preventDefault();
+        list.classList.add('kanban-drop-target');
+      });
+      list.addEventListener('dragleave', () => list.classList.remove('kanban-drop-target'));
+      list.addEventListener('drop', async e => {
+        e.preventDefault();
+        list.classList.remove('kanban-drop-target');
+        const id = parseInt(e.dataTransfer.getData('text/plain'), 10);
+        const newStatus = list.dataset.status;
+
+        // Figure out drop position among the target column's existing cards
+        // by comparing the pointer's y against each card's vertical midpoint.
+        const cardEls = [...list.querySelectorAll('.kanban-card')].filter(el => parseInt(el.dataset.id, 10) !== id);
+        let insertBefore = cardEls.length;
+        for (let i = 0; i < cardEls.length; i++) {
+          const rect = cardEls[i].getBoundingClientRect();
+          if (e.clientY < rect.top + rect.height / 2) { insertBefore = i; break; }
+        }
+        const orderedIds = cardEls.map(el => parseInt(el.dataset.id, 10));
+        orderedIds.splice(insertBefore, 0, id);
+
+        await Promise.all(orderedIds.map((itemId, idx) => fetch(`/api/kanban/items/${itemId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: newStatus, sort_order: idx }),
+        })));
+        await loadAll();
+      });
+    });
+  }
+
+  function renderAssigneeOptions() {
+    const sel = document.getElementById('kanbanAssignee');
+    sel.innerHTML = '<option value="">Unassigned</option>' +
+      users.map(u => `<option value="${u.id}">${escHtml(u.username)}</option>`).join('');
+  }
+
+  function renderParentOptions() {
+    const sel = document.getElementById('kanbanParent');
+    sel.innerHTML = '<option value="">None</option>' +
+      items.filter(i => !i.parent_id && i.id !== editingId)
+        .map(i => `<option value="${i.id}">${escHtml(i.title)}</option>`).join('');
+  }
+
+  function openModal(id) {
+    editingId = id ?? null;
+    formError.hidden = true;
+    document.getElementById('kanbanModalHeading').textContent = id ? '// Edit Card' : '// New Card';
+    deleteBtn.hidden = !id;
+    renderParentOptions();
+
+    const item = id ? items.find(i => i.id === id) : null;
+    document.getElementById('kanbanTitle').value = item?.title ?? '';
+    document.getElementById('kanbanDescription').value = item?.description ?? '';
+    document.getElementById('kanbanStatus').value = item?.status ?? 'idea';
+    document.getElementById('kanbanPriority').value = item?.priority ?? 'medium';
+    document.getElementById('kanbanItemType').value = item?.item_type ?? 'task';
+    document.getElementById('kanbanAssignee').value = item?.assigned_to ?? '';
+    document.getElementById('kanbanParent').value = item?.parent_id ?? '';
+    document.getElementById('kanbanDueDate').value = item?.due_date
+      ? new Date(item.due_date * 1000).toISOString().slice(0, 10)
+      : '';
+
+    modal.hidden = false;
+    document.getElementById('kanbanTitle').focus();
+  }
+
+  function closeModal() { modal.hidden = true; }
+
+  document.getElementById('kanbanNewCardBtn').addEventListener('click', () => openModal(null));
+  document.getElementById('kanbanModalCloseBtn').addEventListener('click', closeModal);
+  modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
+
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+    formError.hidden = true;
+
+    const body = {
+      title: document.getElementById('kanbanTitle').value.trim(),
+      description: document.getElementById('kanbanDescription').value.trim(),
+      status: document.getElementById('kanbanStatus').value,
+      priority: document.getElementById('kanbanPriority').value,
+      item_type: document.getElementById('kanbanItemType').value,
+      assigned_to: document.getElementById('kanbanAssignee').value || null,
+      parent_id: document.getElementById('kanbanParent').value || null,
+      due_date: document.getElementById('kanbanDueDate').value || null,
+    };
+
+    const url = editingId ? `/api/kanban/items/${editingId}` : '/api/kanban/items';
+    const method = editingId ? 'PATCH' : 'POST';
+    const res = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      formError.textContent = data.error ?? 'Failed to save card';
+      formError.hidden = false;
+      return;
+    }
+    closeModal();
+    await loadAll();
+  });
+
+  deleteBtn.addEventListener('click', () => {
+    if (!editingId) return;
+    confirmDialog('Delete this card? This cannot be undone.', async () => {
+      await fetch(`/api/kanban/items/${editingId}`, { method: 'DELETE' });
+      closeModal();
+      await loadAll();
+    }, 'Delete Card');
+  });
+
+  // ── View toggle ──
+  const boardBtn = document.getElementById('kanbanViewBoardBtn');
+  const calBtn = document.getElementById('kanbanViewCalendarBtn');
+  boardBtn.addEventListener('click', () => {
+    boardBtn.classList.add('active'); calBtn.classList.remove('active');
+    board.hidden = false; calendarWrap.hidden = true;
+  });
+  calBtn.addEventListener('click', () => {
+    calBtn.classList.add('active'); boardBtn.classList.remove('active');
+    board.hidden = true; calendarWrap.hidden = false;
+  });
+
+  // ── Calendar view ── (reads the same already-fetched item list, filtered
+  // to those with a due_date — not a separate endpoint or table; see the
+  // plan doc's Chunk 0 on why this doesn't touch the public /events page.)
+  function renderCalendar() {
+    const year = calMonth.getFullYear();
+    const month = calMonth.getMonth();
+    document.getElementById('kanbanCalLabel').textContent =
+      calMonth.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+
+    const firstDay = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const byDay = {};
+    items.filter(i => i.due_date).forEach(i => {
+      const d = new Date(i.due_date * 1000);
+      if (d.getFullYear() === year && d.getMonth() === month) {
+        (byDay[d.getDate()] ??= []).push(i);
+      }
+    });
+
+    let cells = '';
+    for (let i = 0; i < firstDay; i++) cells += '<div class="kanban-cal-day kanban-cal-empty"></div>';
+    for (let day = 1; day <= daysInMonth; day++) {
+      const dayItems = byDay[day] ?? [];
+      cells += `
+        <div class="kanban-cal-day">
+          <div class="kanban-cal-day-num">${day}</div>
+          ${dayItems.map(i => `<span class="kanban-cal-item" data-id="${i.id}" title="${escHtml(i.title)}">${escHtml(i.title)}</span>`).join('')}
+        </div>`;
+    }
+    document.getElementById('kanbanCalGrid').innerHTML = cells;
+    document.getElementById('kanbanCalGrid').querySelectorAll('.kanban-cal-item').forEach(el => {
+      el.addEventListener('click', () => openModal(parseInt(el.dataset.id, 10)));
+    });
+  }
+
+  document.getElementById('kanbanCalPrevBtn').addEventListener('click', () => {
+    calMonth.setMonth(calMonth.getMonth() - 1);
+    renderCalendar();
+  });
+  document.getElementById('kanbanCalNextBtn').addEventListener('click', () => {
+    calMonth.setMonth(calMonth.getMonth() + 1);
+    renderCalendar();
+  });
+
+  await loadAll();
+}
+
 // ─── Init ──────────────────────────────────────────────────────────────────────
 
 // ─── Join Room Page ────────────────────────────────────────────
@@ -3969,6 +4239,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     initQuizRoom();
   } else if (window.location.pathname === '/instructor') {
     initInstructorPanel();
+  } else if (window.location.pathname === '/kanban') {
+    initKanbanPage();
   } else if (window.location.pathname === '/admin') {
     initAdminPanel();
   } else if (window.location.pathname === '/contact') {

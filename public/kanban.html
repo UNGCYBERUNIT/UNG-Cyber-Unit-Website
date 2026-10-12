@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex">
+  <title>CyberUnit @ UNG — Kanban Board</title>
+  <link rel="icon" href="/favicon.ico" type="image/x-icon">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+  <!-- ─── Navbar ──────────────────────────────────────────── -->
+  <nav class="navbar" role="navigation" aria-label="Main navigation">
+    <div class="container">
+      <a href="/" class="navbar-logo"><img src="/images/CyberUnitLogo_Transparent.png" alt="CyberUnit @ UNG" class="navbar-logo-img"><span class="navbar-logo-text">[ CyberUnit @ UNG ]</span></a>
+      <button class="hamburger" id="hamburger" aria-label="Toggle navigation" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
+      <ul class="navbar-links" id="navLinks">
+        <li><a href="/">Home</a></li>
+        <li><a href="https://discord.gg/BjU632E7sV" target="_blank" rel="noopener noreferrer" class="btn btn-sm navbar-discord-btn">Discord</a></li>
+        <li id="authNavItem"></li>
+      </ul>
+    </div>
+  </nav>
+
+  <main class="page-body">
+    <div class="container" style="max-width: 1200px; padding: 2rem 1rem;">
+
+      <header style="margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem;">
+        <div>
+          <h1 style="font-family: 'Share Tech Mono', monospace; color: var(--accent); font-size: 1.6rem; margin: 0 0 0.25rem;">
+            // Kanban Board
+          </h1>
+          <p style="color: var(--text-muted); font-family: 'Share Tech Mono', monospace; font-size: 0.85rem; margin: 0;">
+            Internal planning board — instructor/admin only
+          </p>
+        </div>
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+          <div class="kanban-view-toggle" role="group" aria-label="Board view">
+            <button class="btn btn-sm kanban-view-btn active" id="kanbanViewBoardBtn" type="button">Board</button>
+            <button class="btn btn-sm kanban-view-btn" id="kanbanViewCalendarBtn" type="button">Calendar</button>
+          </div>
+          <button class="btn btn-primary btn-sm" id="kanbanNewCardBtn" type="button">+ New Card</button>
+        </div>
+      </header>
+
+      <p class="form-error" id="kanbanLoadError" aria-live="polite" hidden></p>
+
+      <!-- ─── Board view ──────────────────────────────────── -->
+      <div id="kanbanBoard" class="kanban-board"></div>
+
+      <!-- ─── Calendar view (hidden until toggled) ──────────── -->
+      <div id="kanbanCalendar" class="kanban-calendar" hidden>
+        <div class="kanban-calendar-header">
+          <button class="btn btn-sm" id="kanbanCalPrevBtn" type="button">← Prev</button>
+          <h2 id="kanbanCalLabel" class="instructor-section-heading" style="margin: 0;"></h2>
+          <button class="btn btn-sm" id="kanbanCalNextBtn" type="button">Next →</button>
+        </div>
+        <div id="kanbanCalGrid" class="kanban-calendar-grid"></div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- ─── Create/Edit Card Modal ─────────────────────────── -->
+  <div class="modal-overlay" id="kanbanCardModal" hidden role="dialog" aria-modal="true">
+    <div class="modal kanban-modal">
+      <button class="modal-close" id="kanbanModalCloseBtn" aria-label="Close">✕</button>
+      <h2 id="kanbanModalHeading" class="instructor-section-heading" style="margin-top:0;">// New Card</h2>
+
+      <form id="kanbanCardForm" class="modal-form" novalidate>
+        <div class="form-group">
+          <label for="kanbanTitle">Title</label>
+          <input type="text" id="kanbanTitle" maxlength="200" autocomplete="off">
+        </div>
+
+        <div class="form-group">
+          <label for="kanbanDescription">Description</label>
+          <textarea id="kanbanDescription" rows="4" maxlength="5000"></textarea>
+        </div>
+
+        <div class="instructor-form-grid">
+          <div class="form-group">
+            <label for="kanbanStatus">Status</label>
+            <select id="kanbanStatus">
+              <option value="idea">Idea</option>
+              <option value="todo">To Do</option>
+              <option value="in_progress">In Progress</option>
+              <option value="in_review">In Review</option>
+              <option value="done">Done</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="kanbanPriority">Priority</label>
+            <select id="kanbanPriority">
+              <option value="lowest">Lowest</option>
+              <option value="low">Low</option>
+              <option value="medium" selected>Medium</option>
+              <option value="high">High</option>
+              <option value="highest">Highest</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="kanbanItemType">Type</label>
+            <select id="kanbanItemType">
+              <option value="task">Task</option>
+              <option value="story">Story</option>
+              <option value="subtask">Subtask</option>
+              <option value="epic">Epic</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="kanbanAssignee">Assignee <span class="form-hint">optional</span></label>
+            <select id="kanbanAssignee">
+              <option value="">Unassigned</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="kanbanDueDate">Due Date <span class="form-hint">optional</span></label>
+            <input type="date" id="kanbanDueDate">
+          </div>
+
+          <div class="form-group">
+            <label for="kanbanParent">Parent Item <span class="form-hint">optional — makes this a subtask</span></label>
+            <select id="kanbanParent">
+              <option value="">None</option>
+            </select>
+          </div>
+        </div>
+
+        <p class="form-error" id="kanbanFormError" aria-live="polite" hidden></p>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.5rem;">
+          <button type="button" class="btn btn-danger" id="kanbanDeleteBtn" hidden>Delete Card</button>
+          <button type="submit" class="btn btn-primary" style="margin-left: auto;">Save Card</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script type="module" src="/js/main.js"></script>
+</body>
+</html>

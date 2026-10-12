@@ -3585,6 +3585,179 @@ describe('POST /api/lab/web-exploitation/login', () => {
   });
 });
 
+// ─── /api/kanban ─────────────────────────────────────────────────────────────
+
+describe('GET /api/kanban/items', () => {
+  for (const role of ['guest', 'member', 'student']) {
+    test(`should reject a ${role} (instructor+ only)`, async () => {
+      const cookie = await sessionCookieFor({ sub: 1, username: 'alice', role });
+      const res = await worker.fetch(
+        new Request('https://example.com/api/kanban/items', { headers: { Cookie: cookie } }),
+        { JWT_SECRET: SECRET, DB: mockDB() },
+      );
+      assert.equal(res.status, 403);
+    });
+  }
+
+  test('should reject an unauthenticated request', async () => {
+    const res = await worker.fetch(
+      new Request('https://example.com/api/kanban/items'),
+      { JWT_SECRET: SECRET, DB: mockDB() },
+    );
+    assert.equal(res.status, 401);
+  });
+
+  for (const role of ['instructor', 'admin']) {
+    test(`should return the item list for a ${role}`, async () => {
+      const cookie = await sessionCookieFor({ sub: 1, username: 'inst', role });
+      const res = await worker.fetch(
+        new Request('https://example.com/api/kanban/items', { headers: { Cookie: cookie } }),
+        { JWT_SECRET: SECRET, DB: mockDB() },
+      );
+      assert.equal(res.status, 200);
+      const data = await res.json();
+      assert.ok(Array.isArray(data.results));
+    });
+  }
+});
+
+describe('POST /api/kanban/items', () => {
+  const post = (body, cookie) => worker.fetch(
+    new Request('https://example.com/api/kanban/items', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(cookie ? { Cookie: cookie } : {}) },
+      body: JSON.stringify(body),
+    }),
+    { JWT_SECRET: SECRET, DB: mockDB() },
+  );
+
+  test('should reject a member (instructor+ only)', async () => {
+    const cookie = await sessionCookieFor({ sub: 1, username: 'alice', role: 'member' });
+    const res = await post({ title: 'Fix the thing' }, cookie);
+    assert.equal(res.status, 403);
+  });
+
+  test('should reject an empty title', async () => {
+    const cookie = await sessionCookieFor({ sub: 1, username: 'inst', role: 'instructor' });
+    const res = await post({ title: '' }, cookie);
+    assert.equal(res.status, 400);
+  });
+
+  test('should reject an invalid status', async () => {
+    const cookie = await sessionCookieFor({ sub: 1, username: 'inst', role: 'instructor' });
+    const res = await post({ title: 'Card', status: 'bogus' }, cookie);
+    assert.equal(res.status, 400);
+  });
+
+  test('should create the item for an instructor with no assignee (no notification attempted)', async () => {
+    const cookie = await sessionCookieFor({ sub: 1, username: 'inst', role: 'instructor' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/kanban/items', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Cookie: cookie },
+        body: JSON.stringify({ title: 'Design the new flyer' }),
+      }),
+      { JWT_SECRET: SECRET, DB: mockDB() },
+    );
+    assert.equal(res.status, 201);
+    const data = await res.json();
+    assert.equal(data.title, 'Design the new flyer');
+    assert.equal(data.status, 'idea');
+  });
+
+  test('should create the item for an admin', async () => {
+    const cookie = await sessionCookieFor({ sub: 1, username: 'admin1', role: 'admin' });
+    const res = await post({ title: 'Renew Discord nitro' }, cookie);
+    assert.equal(res.status, 201);
+  });
+});
+
+describe('PATCH /api/kanban/items/:id', () => {
+  test('should reject a member', async () => {
+    const cookie = await sessionCookieFor({ sub: 2, username: 'bob', role: 'member' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/kanban/items/5', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Cookie: cookie },
+        body: JSON.stringify({ status: 'done' }),
+      }),
+      { JWT_SECRET: SECRET, DB: mockDB() },
+    );
+    assert.equal(res.status, 403);
+  });
+
+  test('should 404 for an unknown item', async () => {
+    const cookie = await sessionCookieFor({ sub: 1, username: 'inst', role: 'instructor' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/kanban/items/999', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Cookie: cookie },
+        body: JSON.stringify({ status: 'done' }),
+      }),
+      { JWT_SECRET: SECRET, DB: mockDB() },
+    );
+    assert.equal(res.status, 404);
+  });
+
+  test('should let any instructor move any card (no per-creator ownership check)', async () => {
+    const db = mockAuditActionDB({
+      first: [[/SELECT \* FROM kanban_items WHERE id = \?/, {
+        id: 5, title: 'Old Title', description: '', item_type: 'task', status: 'todo',
+        priority: 'medium', sort_order: 0, parent_id: null, assigned_to: null, due_date: null,
+        created_by: 2, created_at: 1000,
+      }]],
+    });
+    const cookie = await sessionCookieFor({ sub: 1, username: 'another-instructor', role: 'instructor' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/kanban/items/5', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Cookie: cookie },
+        body: JSON.stringify({ status: 'in_progress', sort_order: 2 }),
+      }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 200);
+    const updateCall = db.calls.find(c => c.op === 'run' && /UPDATE kanban_items\s+SET/.test(c.sql));
+    assert.ok(updateCall);
+    assert.equal(updateCall.bindings[3], 'in_progress');
+  });
+});
+
+describe('DELETE /api/kanban/items/:id', () => {
+  test('should reject a non-instructor', async () => {
+    const cookie = await sessionCookieFor({ sub: 2, username: 'bob', role: 'member' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/kanban/items/5', { method: 'DELETE', headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: mockDB() },
+    );
+    assert.equal(res.status, 403);
+  });
+
+  test('should 404 for an unknown item', async () => {
+    const cookie = await sessionCookieFor({ sub: 1, username: 'inst', role: 'instructor' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/kanban/items/999', { method: 'DELETE', headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: mockDB() },
+    );
+    assert.equal(res.status, 404);
+  });
+
+  test('should delete and log to the audit log in the same batch', async () => {
+    const db = mockAuditActionDB({
+      first: [[/SELECT title FROM kanban_items WHERE id = \?/, { title: 'Stale card' }]],
+    });
+    const cookie = await sessionCookieFor({ sub: 1, username: 'inst', role: 'instructor' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/kanban/items/5', { method: 'DELETE', headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 200);
+    const batchCall = db.calls.find(c => c.op === 'batch');
+    assert.ok(batchCall.sqls.some(sql => /DELETE FROM kanban_items WHERE id = \?/.test(sql)));
+    assert.ok(batchCall.sqls.some(sql => /INSERT INTO audit_log/.test(sql)));
+  });
+});
+
 describe('Unknown routes', () => {
   test('should 404 for a nonsense path', async () => {
     const res = await worker.fetch(new Request('https://example.com/this-page-does-not-exist'), { ASSETS: mockAssets() });

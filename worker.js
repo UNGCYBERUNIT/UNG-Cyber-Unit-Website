@@ -47,6 +47,7 @@ import { handleFeedbackRoutes } from './src/routes/feedback.js';
 import { handleRoomsRoutes } from './src/routes/rooms.js';
 import { handleQuestionBankRoutes } from './src/routes/question-bank.js';
 import { handleInstructorRoutes } from './src/routes/instructor.js';
+import { handleKanbanRoutes } from './src/routes/kanban.js';
 import { handleSeoRoutes } from './src/routes/seo.js';
 import { handleTopicsRoutes } from './src/routes/topics.js';
 import { handleChallengesRoutes } from './src/routes/challenges.js';
@@ -204,6 +205,12 @@ export default {
     // ── Instructor Analytics: site-wide topic-quiz completion ────────────────
     {
       const r = await handleInstructorRoutes(request, env, url, path, secureCookie);
+      if (r) return r;
+    }
+
+    // ── Kanban Board (Jira replacement) ───────────────────────────────────────
+    {
+      const r = await handleKanbanRoutes(request, env, url, path, secureCookie);
       if (r) return r;
     }
 

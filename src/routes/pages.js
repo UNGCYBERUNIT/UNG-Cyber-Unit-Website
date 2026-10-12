@@ -29,6 +29,7 @@ export async function handlePagesRoutes(request, env, url, path, secureCookie) {
     '/about': '/about',
     '/instructor': '/instructor',
     '/admin': '/admin',
+    '/kanban': '/kanban',
     '/quiz': '/quiz',
     '/profile': '/profile',
     '/start': '/start',

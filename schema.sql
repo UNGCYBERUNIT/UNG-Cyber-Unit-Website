@@ -253,3 +253,32 @@ CREATE TABLE IF NOT EXISTS challenge_submit_rate_limit (
   ts      INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_csrl_user_ts ON challenge_submit_rate_limit (user_id, ts);
+
+-- Kanban board (Jira replacement, see docs/plan-kanban-board.md). Shared,
+-- single board, instructor+-gated for both read and write (no per-creator
+-- ownership check — same shared-content trust model as announcements, not
+-- Quiz Rooms' per-creator model). Fixed status/priority/item_type enums
+-- rather than Jira-style custom workflows — see the plan doc's Chunk 0.
+-- parent_id is one level of subtask nesting only (a subtask's own parent_id
+-- points at a top-level item; subtasks are not shown as their own column
+-- cards, just a checklist on the parent).
+CREATE TABLE IF NOT EXISTS kanban_items (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  title       TEXT    NOT NULL,
+  description TEXT    NOT NULL DEFAULT '',
+  item_type   TEXT    NOT NULL DEFAULT 'task',    -- task | story | subtask | epic
+  status      TEXT    NOT NULL DEFAULT 'idea',    -- idea | todo | in_progress | in_review | done
+  priority    TEXT    NOT NULL DEFAULT 'medium',  -- lowest | low | medium | high | highest
+  sort_order  INTEGER NOT NULL DEFAULT 0,
+  parent_id   INTEGER,
+  assigned_to INTEGER,
+  due_date    INTEGER,
+  created_by  INTEGER NOT NULL,
+  created_at  INTEGER NOT NULL,
+  updated_at  INTEGER,
+  FOREIGN KEY (parent_id)    REFERENCES kanban_items(id),
+  FOREIGN KEY (assigned_to)  REFERENCES users(id),
+  FOREIGN KEY (created_by)   REFERENCES users(id)
+);
+CREATE INDEX IF NOT EXISTS idx_kanban_items_status ON kanban_items (status, sort_order);
+CREATE INDEX IF NOT EXISTS idx_kanban_items_due_date ON kanban_items (due_date);

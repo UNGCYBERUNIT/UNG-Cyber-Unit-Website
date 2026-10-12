@@ -176,7 +176,8 @@ cybersec-basics/
 | `/challenges` | CTF challenge hub — server-rendered grid of every module (the two pages above plus every generic `/challenges/:id` module below), with a per-user completion badge |
 | `/challenges/:id` | Generic CTF module page (crypto-layers, hidden-in-plain-sight, crack-the-vault, web-exploitation) — briefing, downloads or live target, toolbox, multi-part flag submission, instructor answer key. Server-rendered from the `ctfModules` array in `src/data/challenges.js`; unknown or legacy ids 404 |
 | `/lab/web-exploitation-portal` | The "Breach the Portal" CTF module's live target — a fake employee login page, genuinely SQL-injectable by design (see `CLAUDE.md`'s "Web Exploitation Lab" section). `noindex` |
-| `/instructor` | Instructor panel — create/manage Quiz Rooms, grade free responses |
+| `/instructor` | Instructor panel — create/manage Quiz Rooms, grade free responses, link to the Kanban Board |
+| `/kanban` | Kanban Board — Jira replacement. Instructor/admin only (read and write). Shared board, drag-and-drop cards across Idea/To Do/In Progress/In Review/Done, assignment with an email notification, due-date calendar view. `noindex`, not in the sitemap. See `docs/plan-kanban-board.md`. |
 | `/student-hub` | Student-only quiz rooms — gated to the admin-assigned `student` role and above |
 | `/quiz` | **Join Room** — browse public Quiz Rooms, or enter a private room code |
 | `/quiz/:code` | Student — take a live Quiz Room / view your result |
@@ -237,6 +238,8 @@ cybersec-basics/
 | `/api/rooms/:code/results` | Instructor — attempt roster for a room |
 | `/api/rooms/:code/analytics` | Instructor (room owner or admin) — per-question miss-rate, excluding ungraded free-response answers from the rate |
 | `/api/instructor/topic-completion` | Instructor — site-wide topic-quiz completion counts/avg. score, aggregated from `quiz_results` (no per-class scope — that concept doesn't exist yet) |
+| `/api/kanban/items` (GET/POST), `/api/kanban/items/:id` (PATCH/DELETE) | Instructor+ — shared Kanban board CRUD; any instructor/admin can edit/move/delete any card (not creator-restricted, same model as Announcements). Assigning a card emails the assignee if they have a verified address. Delete is audit-logged |
+| `/api/kanban/users` (GET) | Instructor+ — id/username-only picker list for the assignee dropdown (separate from the admin-only `/api/admin/users`) |
 | `/api/rooms/:code` (GET/PATCH/DELETE) | Instructor — view/edit/delete a room |
 | `/api/rooms/:code/attempts/:attemptId` (DELETE) | Instructor — reset a student's attempt |
 | `/api/rooms/:code/answers/:answerId` (PATCH) | Instructor — grade a free-response answer |

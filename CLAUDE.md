@@ -141,14 +141,40 @@ throwaway room). `POST /api/rooms` accepts a `template_id` form field as an alte
 the uploaded `file` field for question source.
 
 **Admin audit log** (see `docs/plan-audit-log.md`): `logAudit()` in `src/lib/audit.js` writes an
-append-only row to `audit_log` for the five destructive/privilege-altering mutations in the
-app — role change (`PATCH /api/admin/users/:id`), user delete (`DELETE
-/api/admin/users/:id`), announcement create/edit/delete, and room delete (`DELETE
-/api/rooms/:code`, instructor or admin). Everywhere it's called, the `logAudit()` statement
-rides in the *same* `env.DB.batch([...])` as the mutation it logs, so the two commit
-atomically. **No PATCH/DELETE route for `audit_log` should ever be added** — not even a "clear
-log" admin button — that would defeat the feature's purpose; treat adding one as a deliberate,
+append-only row to `audit_log` for the destructive/privilege-altering mutations in the app —
+role change (`PATCH /api/admin/users/:id`), user delete (`DELETE /api/admin/users/:id`),
+announcement create/edit/delete, room delete (`DELETE /api/rooms/:code`, instructor or admin),
+and Kanban card delete (`DELETE /api/kanban/items/:id`, see the Kanban Board section below).
+Everywhere it's called, the `logAudit()` statement rides in the *same* `env.DB.batch([...])`
+as the mutation it logs, so the two commit atomically. Deliberately **not** logged: Kanban card
+create/edit/move/assign — those are low-stakes and reversible, unlike a delete, and logging
+them would turn `audit_log` into a general activity feed (a different feature with a different
+retention/volume shape), not the "who did the irreversible thing" record it's meant to be.
+**No PATCH/DELETE route for `audit_log` should ever be added** — not even a "clear log" admin
+button — that would defeat the feature's purpose; treat adding one as a deliberate,
 separately-reviewed decision, not a routine change.
+
+**Kanban Board** (see `docs/plan-kanban-board.md`): a Jira replacement — the club only ever
+used Jira's Kanban board feature, not its other modules, so `src/routes/kanban.js` reimplements
+just that against a new `kanban_items` table. Instructor+-gated for **both** read and write
+(`requireRole(request, env, 'instructor')` once, same pattern as
+`src/routes/instructor.js`) — regular members never see this page at all, unlike
+Announcements/Events' public-read model. Any instructor/admin can edit/move/delete any card —
+shared-content ownership, no per-creator check, same trust model as Announcements, not Quiz
+Rooms. One shared board, fixed status (`idea`/`todo`/`in_progress`/`in_review`/`done`) and
+priority (`lowest`/`low`/`medium`/`high`/`highest`) enums — no Jira-style custom workflows.
+`parent_id` gives one level of subtask nesting only (rendered as a checklist on the parent
+card, not its own column card). **Assignment notifications are email-only** — reuses
+`sendResendEmail()` exactly like `verify-email`/`forgot-password` do, silently no-ops if the
+assignee has no verified `users.email` or `RESEND_API_KEY` isn't set. There is **no real push-
+notification infrastructure in this app** (no service worker, no VAPID keys) — don't add one
+casually for this or any future feature; it's a meaningfully bigger lift than it looks (new
+service worker, subscription lifecycle, payload encryption) and wasn't what "push notification"
+turned out to mean here. The due-date calendar view on `/kanban` reads the same
+already-fetched item list client-side — it is **not** synced with the public `/events` table;
+those are different audiences (internal planning deadline vs. club-wide event), and auto-
+syncing them would violate the "snapshot, not live reference" principle used elsewhere in this
+app (see Question Bank below).
 
 **Discord account pairing** (see `docs/plan-discord-pairing.md`): `users.discord_id` /
 `discord_username` / `discord_linked_at`, linked via a real Discord OAuth (`identify` scope)
