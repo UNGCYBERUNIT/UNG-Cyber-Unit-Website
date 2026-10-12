@@ -2376,6 +2376,60 @@ async function initKanbanPage() {
     }, 'Delete Card');
   });
 
+  // ── Import CSV ──
+  const importModal = document.getElementById('kanbanImportModal');
+  const importForm = document.getElementById('kanbanImportForm');
+  const importError = document.getElementById('kanbanImportError');
+  const importSuccess = document.getElementById('kanbanImportSuccess');
+  const importFile = document.getElementById('kanbanImportFile');
+
+  function openImportModal() {
+    importError.hidden = true;
+    importSuccess.hidden = true;
+    importForm.reset();
+    document.getElementById('kanbanImportFileText').textContent = 'Choose .csv file...';
+    importModal.hidden = false;
+  }
+  function closeImportModal() { importModal.hidden = true; }
+
+  document.getElementById('kanbanImportBtn').addEventListener('click', openImportModal);
+  document.getElementById('kanbanImportCloseBtn').addEventListener('click', closeImportModal);
+  importModal.addEventListener('click', e => { if (e.target === importModal) closeImportModal(); });
+
+  importFile.addEventListener('change', e => {
+    const file = e.target.files[0];
+    document.getElementById('kanbanImportFileText').textContent = file ? file.name : 'Choose .csv file...';
+  });
+
+  importForm.addEventListener('submit', async e => {
+    e.preventDefault();
+    importError.hidden = true;
+    importSuccess.hidden = true;
+
+    const file = importFile.files[0];
+    if (!file) {
+      importError.textContent = 'Choose a CSV file first';
+      importError.hidden = false;
+      return;
+    }
+
+    const fd = new FormData();
+    fd.set('file', file);
+    const res = await fetch('/api/kanban/import', { method: 'POST', body: fd });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      importError.textContent = data.error ?? 'Import failed';
+      importError.hidden = false;
+      return;
+    }
+
+    importSuccess.textContent = data.unresolvedParents?.length
+      ? `Imported ${data.imported} task${data.imported === 1 ? '' : 's'}. Couldn't match a parent for: ${data.unresolvedParents.join(', ')}.`
+      : `Imported ${data.imported} task${data.imported === 1 ? '' : 's'}.`;
+    importSuccess.hidden = false;
+    await loadAll();
+  });
+
   // ── View toggle ──
   const boardBtn = document.getElementById('kanbanViewBoardBtn');
   const calBtn = document.getElementById('kanbanViewCalendarBtn');

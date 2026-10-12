@@ -3587,6 +3587,135 @@ describe('POST /api/lab/web-exploitation/login', () => {
 
 // ─── /api/kanban ─────────────────────────────────────────────────────────────
 
+// A mock D1 for POST /api/kanban/import: resolves the users list and the
+// existing-items list independently so a test can control both sides of
+// assignee/parent resolution, and tracks every batch() call so inserted
+// row count / sort_order / parent-link UPDATEs can be asserted.
+function mockKanbanImportDB({ users = [], existingItems = [] } = {}) {
+  const calls = [];
+  let nextId = 100;
+  const exec = (sql, bindings) => ({
+    sql, bindings,
+    first: async () => {
+      calls.push({ sql, bindings, op: 'first' });
+      if (/SELECT token_version FROM users WHERE id = \?/.test(sql)) return { token_version: 0 };
+      return null;
+    },
+    all: async () => {
+      calls.push({ sql, bindings, op: 'all' });
+      if (/SELECT id, username FROM users/.test(sql)) return { results: users };
+      if (/SELECT id, title, status, sort_order FROM kanban_items/.test(sql)) return { results: existingItems };
+      return { results: [] };
+    },
+    run: async () => { calls.push({ sql, bindings, op: 'run' }); return { meta: { last_row_id: 1, changes: 1 } }; },
+  });
+  return {
+    calls,
+    prepare(sql) {
+      return { bind: (...bindings) => exec(sql, bindings), ...exec(sql, null) };
+    },
+    async batch(stmts) {
+      calls.push({ op: 'batch', sqls: stmts.map(s => s.sql), bindings: stmts.map(s => s.bindings) });
+      return stmts.map(() => ({ meta: { last_row_id: nextId++, changes: 1 } }));
+    },
+  };
+}
+
+function kanbanCsvFormData(csvText) {
+  const fd = new FormData();
+  fd.set('file', new Blob([csvText], { type: 'text/csv' }), 'tasks.csv');
+  return fd;
+}
+
+describe('POST /api/kanban/import', () => {
+  test('should reject a non-instructor', async () => {
+    const cookie = await sessionCookieFor({ sub: 1, username: 'alice', role: 'member' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/kanban/import', { method: 'POST', headers: { Cookie: cookie }, body: kanbanCsvFormData('title\nFix the thing') }),
+      { JWT_SECRET: SECRET, DB: mockDB() },
+    );
+    assert.equal(res.status, 403);
+  });
+
+  test('should reject a request with no file', async () => {
+    const cookie = await sessionCookieFor({ sub: 1, username: 'inst', role: 'instructor' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/kanban/import', { method: 'POST', headers: { Cookie: cookie }, body: new FormData() }),
+      { JWT_SECRET: SECRET, DB: mockDB() },
+    );
+    assert.equal(res.status, 400);
+  });
+
+  test('should reject a CSV missing the required title column', async () => {
+    const cookie = await sessionCookieFor({ sub: 1, username: 'inst', role: 'instructor' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/kanban/import', { method: 'POST', headers: { Cookie: cookie }, body: kanbanCsvFormData('description\nNo title column here') }),
+      { JWT_SECRET: SECRET, DB: mockDB() },
+    );
+    assert.equal(res.status, 400);
+    const data = await res.json();
+    assert.match(data.error, /title/);
+  });
+
+  test('should reject the whole import if any row has an invalid status (atomic, nothing written)', async () => {
+    const db = mockKanbanImportDB({});
+    const cookie = await sessionCookieFor({ sub: 1, username: 'inst', role: 'instructor' });
+    const csv = 'title,status\nGood row,todo\nBad row,not-a-real-status';
+    const res = await worker.fetch(
+      new Request('https://example.com/api/kanban/import', { method: 'POST', headers: { Cookie: cookie }, body: kanbanCsvFormData(csv) }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 400);
+    assert.ok(!db.calls.some(c => c.op === 'batch'));
+  });
+
+  test('should import valid rows, resolve assignee by username, and report an unresolved parent title', async () => {
+    const db = mockKanbanImportDB({
+      users: [{ id: 7, username: 'bob' }],
+      existingItems: [],
+    });
+    const cookie = await sessionCookieFor({ sub: 1, username: 'inst', role: 'instructor' });
+    const csv = [
+      'title,description,status,priority,type,assignee,due_date,parent',
+      'Design the flyer,For the fall CTF,todo,high,task,Bob,2026-11-01,',
+      'Pick the font,,todo,low,subtask,,,Nonexistent Parent Title',
+    ].join('\n');
+    const res = await worker.fetch(
+      new Request('https://example.com/api/kanban/import', { method: 'POST', headers: { Cookie: cookie }, body: kanbanCsvFormData(csv) }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 201);
+    const data = await res.json();
+    assert.equal(data.imported, 2);
+    assert.deepEqual(data.unresolvedParents, ['Pick the font']);
+
+    const insertBatch = db.calls.find(c => c.op === 'batch' && c.sqls.some(s => /INSERT INTO kanban_items/.test(s)));
+    assert.ok(insertBatch);
+    // First row's bindings: title, description, item_type, status, priority, sort_order, assigned_to, due_date, created_by, created_at
+    assert.equal(insertBatch.bindings[0][0], 'Design the flyer');
+    assert.equal(insertBatch.bindings[0][6], 7); // assigned_to resolved from "Bob" -> user id 7
+  });
+
+  test('should link a subtask to a sibling row in the same CSV by title', async () => {
+    const db = mockKanbanImportDB({ users: [], existingItems: [] });
+    const cookie = await sessionCookieFor({ sub: 1, username: 'inst', role: 'instructor' });
+    const csv = [
+      'title,parent',
+      'Parent Task,',
+      'Child Subtask,Parent Task',
+    ].join('\n');
+    const res = await worker.fetch(
+      new Request('https://example.com/api/kanban/import', { method: 'POST', headers: { Cookie: cookie }, body: kanbanCsvFormData(csv) }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 201);
+    const data = await res.json();
+    assert.deepEqual(data.unresolvedParents, []);
+    const parentUpdateBatch = db.calls.find(c => c.op === 'batch' && c.sqls.some(s => /UPDATE kanban_items SET parent_id/.test(s)));
+    assert.ok(parentUpdateBatch);
+  });
+});
+
 describe('GET /api/kanban/items', () => {
   for (const role of ['guest', 'member', 'student']) {
     test(`should reject a ${role} (instructor+ only)`, async () => {

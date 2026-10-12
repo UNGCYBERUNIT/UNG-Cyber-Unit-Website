@@ -42,6 +42,7 @@
             <button class="btn btn-sm kanban-view-btn active" id="kanbanViewBoardBtn" type="button">Board</button>
             <button class="btn btn-sm kanban-view-btn" id="kanbanViewCalendarBtn" type="button">Calendar</button>
           </div>
+          <button class="btn btn-sm" id="kanbanImportBtn" type="button">Import CSV</button>
           <button class="btn btn-primary btn-sm" id="kanbanNewCardBtn" type="button">+ New Card</button>
         </div>
       </header>
@@ -140,6 +141,69 @@
           <button type="button" class="btn btn-danger" id="kanbanDeleteBtn" hidden>Delete Card</button>
           <button type="submit" class="btn btn-primary" style="margin-left: auto;">Save Card</button>
         </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ─── Import CSV Modal ───────────────────────────────── -->
+  <div class="modal-overlay" id="kanbanImportModal" hidden role="dialog" aria-modal="true">
+    <div class="modal kanban-modal">
+      <button class="modal-close" id="kanbanImportCloseBtn" aria-label="Close">✕</button>
+      <h2 class="instructor-section-heading" style="margin-top:0;">// Import Tasks as CSV</h2>
+
+      <form id="kanbanImportForm" class="modal-form" novalidate>
+        <div class="form-group">
+          <label for="kanbanImportFile">CSV File</label>
+          <div class="file-input-wrap">
+            <input type="file" id="kanbanImportFile" accept=".csv" class="file-input-hidden" aria-label="Upload CSV file">
+            <label for="kanbanImportFile" class="file-input-label">
+              <span class="file-input-icon" aria-hidden="true">📁</span>
+              <span id="kanbanImportFileText">Choose .csv file...</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Format guide -->
+        <details class="format-guide">
+          <summary class="format-guide-summary">
+            📄 CSV Format Guide
+            <span class="format-guide-arrow">▼</span>
+          </summary>
+          <div class="format-guide-body">
+            <div>
+              <p class="format-tab-heading">Columns</p>
+              <table class="format-col-table" aria-label="CSV column reference">
+                <thead>
+                  <tr><th>Column</th><th>Required?</th><th>Notes</th></tr>
+                </thead>
+                <tbody>
+                  <tr><td>title</td>       <td><span class="req">required</span></td><td>Card title — 200 characters max</td></tr>
+                  <tr><td>description</td> <td><span class="opt">optional</span></td><td>5000 characters max</td></tr>
+                  <tr><td>status</td>      <td><span class="opt">optional</span></td><td><code>idea</code> (default), <code>todo</code>, <code>in_progress</code>, <code>in_review</code>, or <code>done</code></td></tr>
+                  <tr><td>priority</td>    <td><span class="opt">optional</span></td><td><code>lowest</code>, <code>low</code>, <code>medium</code> (default), <code>high</code>, or <code>highest</code></td></tr>
+                  <tr><td>type</td>        <td><span class="opt">optional</span></td><td><code>task</code> (default), <code>story</code>, <code>subtask</code>, or <code>epic</code></td></tr>
+                  <tr><td>assignee</td>    <td><span class="opt">optional</span></td><td>An existing member's <strong>username</strong> (not display name) — case-insensitive. No match on this site → card imports unassigned, not an error</td></tr>
+                  <tr><td>due_date</td>    <td><span class="opt">optional</span></td><td><code>YYYY-MM-DD</code></td></tr>
+                  <tr><td>parent</td>      <td><span class="opt">optional</span></td><td>The exact <strong>title</strong> of another row in this file, or an existing card already on the board — makes this row a subtask. No match → card still imports, just without the subtask link</td></tr>
+                </tbody>
+              </table>
+              <pre class="format-code"><span class="hl">title,description,status,priority,type,assignee,due_date,parent</span>
+"Design the fall flyer","For the CTF kickoff",todo,high,task,gprisk,2026-11-01,
+"Pick the flyer font",,todo,low,subtask,,,"Design the fall flyer"</pre>
+              <p style="color:var(--text-muted);font-size:0.78rem;margin-top:0.5rem;font-family:'Share Tech Mono',monospace;">
+                Only <code>title</code> is required — every other column can be left blank or omitted entirely.
+                Whole file is rejected (nothing is imported) if any row fails validation, so check the error message
+                and re-upload rather than needing to clean up a half-imported board. Max 500 rows, 1MB file size.
+                No per-row assignment emails fire on import — only a manually created or edited card notifies its assignee.
+              </p>
+            </div>
+          </div>
+        </details>
+
+        <p class="form-error" id="kanbanImportError" aria-live="polite" hidden></p>
+        <p id="kanbanImportSuccess" style="color: var(--accent); font-family: 'Share Tech Mono', monospace; font-size: 0.85rem;" hidden></p>
+
+        <button type="submit" class="btn btn-primary" style="margin-top: 0.5rem;">Import</button>
       </form>
     </div>
   </div>

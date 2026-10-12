@@ -174,7 +174,20 @@ turned out to mean here. The due-date calendar view on `/kanban` reads the same
 already-fetched item list client-side — it is **not** synced with the public `/events` table;
 those are different audiences (internal planning deadline vs. club-wide event), and auto-
 syncing them would violate the "snapshot, not live reference" principle used elsewhere in this
-app (see Question Bank below).
+app (see Question Bank below). **CSV import** (`POST /api/kanban/import`, same instructor+
+gate, same multipart/1MB-cap pattern as the Quiz Room question-file upload) bulk-creates cards
+— every row goes through the exact same `validateItemFields()` the manual create/edit API uses
+(200/5000-char caps, strict status/priority/item_type enum whitelist, due-date parse check), so
+a hostile or malformed CSV can't smuggle in anything the manual form couldn't; all DB writes are
+parameterized `bind()`s (never string-built SQL) and card text is HTML-escaped again
+client-side on render, so CSV cell content is never treated as safe-to-render just because it
+passed server validation. The whole import is all-or-nothing — one bad row rejects the entire
+file before anything is written, rather than leaving a half-imported board. `assignee` resolves
+by username (case-insensitive); `parent` resolves by exact title match against the rest of the
+file first, then the existing board — either one failing to resolve is reported back, not
+treated as an import failure (the row still imports). No per-row assignment emails fire on
+import (a large CSV would otherwise mail-bomb the club) — only a manually created/edited card
+notifies its assignee.
 
 **Discord account pairing** (see `docs/plan-discord-pairing.md`): `users.discord_id` /
 `discord_username` / `discord_linked_at`, linked via a real Discord OAuth (`identify` scope)
