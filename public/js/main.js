@@ -2461,14 +2461,25 @@ async function initKanbanPage() {
       }
     });
 
+    // Fixed-height day cells (see CSS) keep every week's row the same size
+    // no matter how many items land on one day, so only a couple of items
+    // can actually fit — show the rest as a "+N more" hint instead of
+    // letting the list grow the cell.
+    const MAX_VISIBLE_PER_DAY = 2;
+
     let cells = '';
     for (let i = 0; i < firstDay; i++) cells += '<div class="kanban-cal-day kanban-cal-empty"></div>';
     for (let day = 1; day <= daysInMonth; day++) {
       const dayItems = byDay[day] ?? [];
+      const visible = dayItems.slice(0, MAX_VISIBLE_PER_DAY);
+      const hiddenCount = dayItems.length - visible.length;
       cells += `
         <div class="kanban-cal-day">
           <div class="kanban-cal-day-num">${day}</div>
-          ${dayItems.map(i => `<span class="kanban-cal-item" data-id="${i.id}" title="${escHtml(i.title)}">${escHtml(i.title)}</span>`).join('')}
+          <div class="kanban-cal-items">
+            ${visible.map(i => `<span class="kanban-cal-item" data-id="${i.id}" title="${escHtml(i.title)}">${escHtml(i.title)}</span>`).join('')}
+            ${hiddenCount > 0 ? `<span class="kanban-cal-more">+${hiddenCount} more</span>` : ''}
+          </div>
         </div>`;
     }
     document.getElementById('kanbanCalGrid').innerHTML = cells;
