@@ -2325,8 +2325,32 @@ async function initKanbanPage() {
       ? new Date(item.due_date * 1000).toISOString().slice(0, 10)
       : '';
 
+    renderSubtasksPanel(id);
+
     modal.hidden = false;
     document.getElementById('kanbanTitle').focus();
+  }
+
+  // Lists an existing card's subtasks (items.parent_id === id) inside its
+  // edit modal — the card's "X/Y subtasks done" badge is just a count, this
+  // is where you see which ones. Clicking a row re-opens the modal on that
+  // subtask (openModal() fully re-renders the form, so this just works).
+  function renderSubtasksPanel(id) {
+    const panel = document.getElementById('kanbanSubtasksPanel');
+    const list = document.getElementById('kanbanSubtasksPanelList');
+    const children = id ? items.filter(i => i.parent_id === id) : [];
+    panel.hidden = children.length === 0;
+    if (children.length === 0) return;
+
+    list.innerHTML = children.map(c => `
+      <div class="kanban-subtask-row" data-id="${c.id}">
+        <span class="kanban-subtask-row-title${c.status === 'done' ? ' kanban-subtask-done' : ''}">${escHtml(c.title)}</span>
+        ${priorityBadge(c.priority)}
+        <span class="kanban-card-meta">${escHtml(KANBAN_STATUSES.find(s => s.key === c.status)?.label ?? c.status)}</span>
+      </div>`).join('');
+    list.querySelectorAll('.kanban-subtask-row').forEach(row => {
+      row.addEventListener('click', () => openModal(parseInt(row.dataset.id, 10)));
+    });
   }
 
   function closeModal() { modal.hidden = true; }

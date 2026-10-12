@@ -2417,6 +2417,29 @@ footer {
 
 .kanban-modal { max-width: 560px; }
 
+.kanban-subtask-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 0.4rem;
+  cursor: pointer;
+  background: var(--bg);
+  transition: border-color 0.15s;
+}
+.kanban-subtask-row:hover { border-color: var(--accent); }
+
+.kanban-subtask-row-title {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 0.85rem;
+}
+.kanban-subtask-row-title.kanban-subtask-done { color: var(--text-muted); text-decoration: line-through; }
+
 .kanban-calendar-header {
   display: flex;
   justify-content: space-between;
