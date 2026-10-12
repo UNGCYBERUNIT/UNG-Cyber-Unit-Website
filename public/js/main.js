@@ -2283,7 +2283,7 @@ async function initKanbanPage() {
       const colItems = topLevel.filter(i => i.status === key && isVisible(i) && passesFilters(i)).sort((a, b) => a.sort_order - b.sort_order);
       return `
         <div class="kanban-column">
-          <div class="kanban-column-header"><span>${escHtml(label)}</span><span class="kanban-column-count">${colItems.length}</span></div>
+          <div class="kanban-column-header" data-status="${key}" title="New ${escHtml(label)} card"><span>${escHtml(label)}</span><span class="kanban-column-count">${colItems.length}</span></div>
           <div class="kanban-card-list" data-status="${key}">
             ${colItems.map(cardHtml).join('')}
           </div>
@@ -2297,6 +2297,13 @@ async function initKanbanPage() {
         e.dataTransfer.setData('text/plain', card.dataset.id);
       });
       card.addEventListener('dragend', () => card.classList.remove('dragging'));
+    });
+
+    // Clicking a column header starts a new card pre-set to that status,
+    // instead of making someone open the blank "+ New Card" form and then
+    // pick the status by hand.
+    board.querySelectorAll('.kanban-column-header').forEach(header => {
+      header.addEventListener('click', () => openModal(null, { status: header.dataset.status }));
     });
 
     board.querySelectorAll('.kanban-card-list').forEach(list => {
@@ -2357,7 +2364,11 @@ async function initKanbanPage() {
         .map(i => `<option value="${i.id}">${escHtml(i.title)}</option>`).join('');
   }
 
-  function openModal(id) {
+  // `prefill` (only meaningful when id is null, i.e. creating a new card)
+  // lets a click elsewhere on the board — a column header, an empty
+  // calendar day — seed the status or due date instead of leaving every
+  // new card to start from the same idea/no-date defaults.
+  function openModal(id, prefill = {}) {
     editingId = id ?? null;
     formError.hidden = true;
     document.getElementById('kanbanModalHeading').textContent = id ? '// Edit Card' : '// New Card';
@@ -2367,14 +2378,14 @@ async function initKanbanPage() {
     const item = id ? items.find(i => i.id === id) : null;
     document.getElementById('kanbanTitle').value = item?.title ?? '';
     document.getElementById('kanbanDescription').value = item?.description ?? '';
-    document.getElementById('kanbanStatus').value = item?.status ?? 'idea';
+    document.getElementById('kanbanStatus').value = item?.status ?? prefill.status ?? 'idea';
     document.getElementById('kanbanPriority').value = item?.priority ?? 'medium';
     document.getElementById('kanbanItemType').value = item?.item_type ?? 'task';
     document.getElementById('kanbanAssignee').value = item?.assigned_to ?? '';
     document.getElementById('kanbanParent').value = item?.parent_id ?? '';
     document.getElementById('kanbanDueDate').value = item?.due_date
       ? new Date(item.due_date * 1000).toISOString().slice(0, 10)
-      : '';
+      : (prefill.due_date ?? '');
 
     renderSubtasksPanel(id);
 
@@ -2588,8 +2599,12 @@ async function initKanbanPage() {
       const dayItems = byDay[day] ?? [];
       const visible = dayItems.slice(0, MAX_VISIBLE_PER_DAY);
       const hiddenCount = dayItems.length - visible.length;
+      // Local Y/M/D string, not a UTC-converted one — matches how dayItems
+      // above was grouped (d.getDate(), also local), so the date this cell
+      // pre-fills is the same date its items are actually showing under.
+      const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
       cells += `
-        <div class="kanban-cal-day">
+        <div class="kanban-cal-day" data-date="${dateStr}" title="New card due ${dateStr}">
           <div class="kanban-cal-day-num">${day}</div>
           <div class="kanban-cal-items">
             ${visible.map(i => `<span class="kanban-cal-item" data-id="${i.id}" title="${escHtml(i.title)}">${escHtml(i.title)}</span>`).join('')}
@@ -2599,7 +2614,15 @@ async function initKanbanPage() {
     }
     document.getElementById('kanbanCalGrid').innerHTML = cells;
     document.getElementById('kanbanCalGrid').querySelectorAll('.kanban-cal-item').forEach(el => {
-      el.addEventListener('click', () => openModal(parseInt(el.dataset.id, 10)));
+      el.addEventListener('click', e => {
+        e.stopPropagation(); // don't also trigger the day cell's new-card click below
+        openModal(parseInt(el.dataset.id, 10));
+      });
+    });
+    // Clicking anywhere else in a day cell (not an existing item) starts a
+    // new card pre-set to that due date.
+    document.getElementById('kanbanCalGrid').querySelectorAll('.kanban-cal-day:not(.kanban-cal-empty)').forEach(dayEl => {
+      dayEl.addEventListener('click', () => openModal(null, { due_date: dayEl.dataset.date }));
     });
   }
 

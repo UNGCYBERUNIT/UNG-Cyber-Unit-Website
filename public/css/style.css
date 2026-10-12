@@ -2433,7 +2433,10 @@ footer {
   border-bottom: 1px solid var(--border);
   display: flex;
   justify-content: space-between;
+  cursor: pointer;
+  transition: background 0.15s;
 }
+.kanban-column-header:hover { background: rgba(255, 255, 255, 0.03); }
 
 .kanban-column-count { color: var(--text-muted); }
 
@@ -2564,7 +2567,10 @@ footer {
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
+  cursor: pointer;
+  transition: border-color 0.15s;
 }
+.kanban-cal-day:not(.kanban-cal-empty):hover { border-color: var(--accent); }
 
 .kanban-cal-day-num { color: var(--text-muted); margin-bottom: 0.25rem; flex-shrink: 0; line-height: 1.2; }
 .kanban-cal-day.kanban-cal-empty { background: none; border: none; }
