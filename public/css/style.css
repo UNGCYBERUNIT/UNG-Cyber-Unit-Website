@@ -2694,6 +2694,8 @@ footer {
   grid-template-columns: 1fr 1fr;
   gap: 1.25rem;
   background: var(--bg);
+  max-height: 60vh;
+  overflow-y: auto;
 }
 
 .format-guide-body > div {
