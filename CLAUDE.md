@@ -201,6 +201,23 @@ treated as an import failure (the row still imports). No per-row assignment emai
 import (a large CSV would otherwise mail-bomb the club) — only a manually created/edited card
 notifies its assignee.
 
+**Search/filter/sort** (client-side only, `public/js/main.js`'s `initKanbanPage()`): `isVisible()`
+(text search, with the "surface the parent if a subtask matches" exception noted above),
+`passesFilters()` (Priority/Type/Assignee, applied directly per item — no subtask-surfacing
+exception, since filtering by a property shouldn't show a card whose *own* priority/type/
+assignee doesn't match), and `sortItems()` (Manual/Recently Modified/Priority/A-Z/Z-A) all read
+shared state (`searchQuery`/`activeFilters`/`sortMode`) that the Board, Calendar, and Archived
+views each independently re-derive from on every render — there is no cached "filtered list"
+anywhere. **Any handler that changes one of these three pieces of state must re-render all
+three views** (`renderBoard()` + `renderCalendar()` + `renderArchived()`), even if only one view
+is currently visible — the others still need to reflect the new state whenever the user switches
+tabs, and a missed call here is an easy silent bug (this already happened once: the original
+search/filter handlers were written before the Archived tab existed and only re-rendered
+Board + Calendar). Outside `sortMode === 'manual'`, the drag-and-drop drop handler skips
+computing/persisting a `sort_order` entirely — the visible order is fully determined by
+`sortItems()` regardless of `sort_order`, so a drop only PATCHes the dragged card's `status`
+(and is a no-op if dropped back in its own column, since nothing changed).
+
 **Discord account pairing** (see `docs/plan-discord-pairing.md`): `users.discord_id` /
 `discord_username` / `discord_linked_at`, linked via a real Discord OAuth (`identify` scope)
 flow at `/api/discord/link/start` → `/api/discord/callback` → `/api/discord/unlink` — not a
