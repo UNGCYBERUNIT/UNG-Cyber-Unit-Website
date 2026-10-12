@@ -2170,13 +2170,19 @@ async function initInstructorPanel() {
 // as Announcements (any instructor/admin may edit/move/delete any card, no
 // per-creator check). Fixed status/priority/item_type enums, one shared board.
 
+// 'archived' is a deliberate terminal/historical state, not a workflow
+// step — it has no board column (see KANBAN_BOARD_STATUSES below) and
+// instead lives in its own hidden-until-selected "Archived" tab, reached
+// by setting a card's status to Archived in the edit form (there's no
+// drag target for it, since it's not visible alongside the board).
 const KANBAN_STATUSES = [
   { key: 'idea', label: 'Idea' },
   { key: 'todo', label: 'To Do' },
   { key: 'in_progress', label: 'In Progress' },
   { key: 'in_review', label: 'In Review' },
-  { key: 'done', label: 'Done' },
+  { key: 'archived', label: 'Archived' },
 ];
+const KANBAN_BOARD_STATUSES = KANBAN_STATUSES.filter(s => s.key !== 'archived');
 
 async function initKanbanPage() {
   if (!isInstructor()) {
@@ -2230,6 +2236,7 @@ async function initKanbanPage() {
 
   const board = document.getElementById('kanbanBoard');
   const calendarWrap = document.getElementById('kanbanCalendar');
+  const archivedWrap = document.getElementById('kanbanArchived');
   const loadError = document.getElementById('kanbanLoadError');
   const modal = document.getElementById('kanbanCardModal');
   const form = document.getElementById('kanbanCardForm');
@@ -2251,6 +2258,7 @@ async function initKanbanPage() {
       renderFilterAssigneeOptions();
       renderParentOptions();
       renderCalendar();
+      renderArchived();
     } catch {
       loadError.textContent = 'Failed to load the board. Try refreshing.';
       loadError.hidden = false;
@@ -2261,11 +2269,14 @@ async function initKanbanPage() {
     return `<span class="kanban-priority kanban-priority-${p}">${escHtml(p)}</span>`;
   }
 
-  function cardHtml(item) {
+  // `draggable` is false for the Archived list — there's no board column
+  // visible alongside it to drop onto, so offering a drag handle there
+  // would just be misleading.
+  function cardHtml(item, { draggable = true } = {}) {
     const due = item.due_date ? new Date(item.due_date * 1000).toLocaleDateString() : '';
     const children = items.filter(i => i.parent_id === item.id);
     return `
-      <div class="kanban-card" draggable="true" data-id="${item.id}">
+      <div class="kanban-card" ${draggable ? 'draggable="true"' : ''} data-id="${item.id}">
         <div class="kanban-card-title">${escHtml(item.title)}</div>
         <div class="kanban-card-tags">
           ${priorityBadge(item.priority)}
@@ -2273,13 +2284,13 @@ async function initKanbanPage() {
         </div>
         ${item.assigned_username ? `<div class="kanban-card-detail">👤 ${escHtml(item.assigned_username)}</div>` : ''}
         ${due ? `<div class="kanban-card-detail">📅 ${due}</div>` : ''}
-        ${children.length ? `<div class="kanban-subtasks">${children.filter(c => c.status === 'done').length}/${children.length} subtasks done</div>` : ''}
+        ${children.length ? `<div class="kanban-subtasks">${children.filter(c => c.status === 'archived').length}/${children.length} subtasks done</div>` : ''}
       </div>`;
   }
 
   function renderBoard() {
     const topLevel = items.filter(i => !i.parent_id);
-    board.innerHTML = KANBAN_STATUSES.map(({ key, label }) => {
+    board.innerHTML = KANBAN_BOARD_STATUSES.map(({ key, label }) => {
       const colItems = topLevel.filter(i => i.status === key && isVisible(i) && passesFilters(i)).sort((a, b) => a.sort_order - b.sort_order);
       return `
         <div class="kanban-column">
@@ -2336,6 +2347,21 @@ async function initKanbanPage() {
         })));
         await loadAll();
       });
+    });
+  }
+
+  // Archived items are a flat list (title/priority/assignee, same card
+  // markup as the board), not another set of columns — there's nothing to
+  // reorder or drag between once something's archived. Still respects
+  // search/filters, same as the board and calendar.
+  function renderArchived() {
+    const archived = items.filter(i => i.status === 'archived' && isVisible(i) && passesFilters(i));
+    const list = document.getElementById('kanbanArchivedList');
+    list.innerHTML = archived.length
+      ? archived.map(i => cardHtml(i, { draggable: false })).join('')
+      : '<p style="color: var(--text-muted); font-family: \'Share Tech Mono\', monospace;">No archived tasks.</p>';
+    list.querySelectorAll('.kanban-card').forEach(card => {
+      card.addEventListener('click', () => openModal(parseInt(card.dataset.id, 10)));
     });
   }
 
@@ -2406,7 +2432,7 @@ async function initKanbanPage() {
 
     list.innerHTML = children.map(c => `
       <div class="kanban-subtask-row" data-id="${c.id}">
-        <span class="kanban-subtask-row-title${c.status === 'done' ? ' kanban-subtask-done' : ''}">${escHtml(c.title)}</span>
+        <span class="kanban-subtask-row-title${c.status === 'archived' ? ' kanban-subtask-done' : ''}">${escHtml(c.title)}</span>
         ${priorityBadge(c.priority)}
         <span class="kanban-card-meta">${escHtml(KANBAN_STATUSES.find(s => s.key === c.status)?.label ?? c.status)}</span>
       </div>`).join('');
@@ -2568,14 +2594,22 @@ async function initKanbanPage() {
   // ── View toggle ──
   const boardBtn = document.getElementById('kanbanViewBoardBtn');
   const calBtn = document.getElementById('kanbanViewCalendarBtn');
-  boardBtn.addEventListener('click', () => {
-    boardBtn.classList.add('active'); calBtn.classList.remove('active');
-    board.hidden = false; calendarWrap.hidden = true;
-  });
-  calBtn.addEventListener('click', () => {
-    calBtn.classList.add('active'); boardBtn.classList.remove('active');
-    board.hidden = true; calendarWrap.hidden = false;
-  });
+  const archivedBtn = document.getElementById('kanbanViewArchivedBtn');
+  const views = [
+    { btn: boardBtn, wrap: board },
+    { btn: calBtn, wrap: calendarWrap },
+    { btn: archivedBtn, wrap: archivedWrap },
+  ];
+  function showView(activeWrap) {
+    views.forEach(({ btn, wrap }) => {
+      const isActive = wrap === activeWrap;
+      btn.classList.toggle('active', isActive);
+      wrap.hidden = !isActive;
+    });
+  }
+  boardBtn.addEventListener('click', () => showView(board));
+  calBtn.addEventListener('click', () => showView(calendarWrap));
+  archivedBtn.addEventListener('click', () => showView(archivedWrap));
 
   // ── Calendar view ── (reads the same already-fetched item list, filtered
   // to those with a due_date — not a separate endpoint or table; see the

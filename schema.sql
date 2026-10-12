@@ -267,7 +267,7 @@ CREATE TABLE IF NOT EXISTS kanban_items (
   title       TEXT    NOT NULL,
   description TEXT    NOT NULL DEFAULT '',
   item_type   TEXT    NOT NULL DEFAULT 'task',    -- task | story | subtask | epic
-  status      TEXT    NOT NULL DEFAULT 'idea',    -- idea | todo | in_progress | in_review | done
+  status      TEXT    NOT NULL DEFAULT 'idea',    -- idea | todo | in_progress | in_review | archived
   priority    TEXT    NOT NULL DEFAULT 'medium',  -- lowest | low | medium | high | highest
   sort_order  INTEGER NOT NULL DEFAULT 0,
   parent_id   INTEGER,

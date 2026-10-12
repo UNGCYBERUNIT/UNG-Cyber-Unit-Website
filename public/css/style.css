@@ -2549,6 +2549,13 @@ footer {
   margin-bottom: 1rem;
 }
 
+.kanban-archived-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+.kanban-archived-list .kanban-card { width: 260px; cursor: pointer; }
+
 .kanban-calendar-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);

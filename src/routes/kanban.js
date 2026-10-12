@@ -10,7 +10,7 @@ import { parseCSVLine } from '../lib/util.js';
 // ownership check, same shared-content trust model as Announcements, not
 // Quiz Rooms' per-creator model. Fixed status/priority/item_type enums
 // rather than Jira-style custom workflows.
-const STATUSES = ['idea', 'todo', 'in_progress', 'in_review', 'done'];
+const STATUSES = ['idea', 'todo', 'in_progress', 'in_review', 'archived'];
 const PRIORITIES = ['lowest', 'low', 'medium', 'high', 'highest'];
 const ITEM_TYPES = ['task', 'story', 'subtask', 'epic'];
 const MAX_IMPORT_FILE_BYTES = 1_000_000; // same cap as the Quiz Room question-file upload

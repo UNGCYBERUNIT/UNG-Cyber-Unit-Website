@@ -161,8 +161,13 @@ just that against a new `kanban_items` table. Instructor+-gated for **both** rea
 `src/routes/instructor.js`) — regular members never see this page at all, unlike
 Announcements/Events' public-read model. Any instructor/admin can edit/move/delete any card —
 shared-content ownership, no per-creator check, same trust model as Announcements, not Quiz
-Rooms. One shared board, fixed status (`idea`/`todo`/`in_progress`/`in_review`/`done`) and
+Rooms. One shared board, fixed status (`idea`/`todo`/`in_progress`/`in_review`/`archived`) and
 priority (`lowest`/`low`/`medium`/`high`/`highest`) enums — no Jira-style custom workflows.
+`archived` is deliberately not a board column — it's a terminal/historical state, not a
+workflow step, reached by setting a card's status to Archived in the edit form (there's no
+drag target for it). It lives in its own `#kanbanArchived` tab, hidden until the "Archived"
+view-toggle button is clicked, same pattern as the Calendar tab — rendered as a flat,
+non-draggable card list (`cardHtml(item, { draggable: false })`), not another set of columns.
 `parent_id` gives one level of subtask nesting only (rendered as a checklist on the parent
 card, not its own column card). **Assignees are restricted to instructor+ accounts** — `GET
 /api/kanban/users` (the picker list) and the CSV import's username resolution both filter to

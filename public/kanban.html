@@ -41,6 +41,7 @@
           <div class="kanban-view-toggle" role="group" aria-label="Board view">
             <button class="btn btn-sm kanban-view-btn active" id="kanbanViewBoardBtn" type="button">Board</button>
             <button class="btn btn-sm kanban-view-btn" id="kanbanViewCalendarBtn" type="button">Calendar</button>
+            <button class="btn btn-sm kanban-view-btn" id="kanbanViewArchivedBtn" type="button">Archived</button>
           </div>
           <button class="btn btn-sm" id="kanbanImportBtn" type="button">Import CSV</button>
           <button class="btn btn-primary btn-sm" id="kanbanNewCardBtn" type="button">+ New Card</button>
@@ -97,6 +98,17 @@
         <div id="kanbanCalGrid" class="kanban-calendar-grid"></div>
       </div>
 
+      <!-- ─── Archived view (hidden until toggled) — a flat list, not a
+           board column, since this is a terminal/historical state, not a
+           workflow step. Not shown by default so a large archive doesn't
+           take up board space. ──────────────────────────────────── -->
+      <div id="kanbanArchived" class="kanban-archived" hidden>
+        <p style="color: var(--text-muted); font-family: 'Share Tech Mono', monospace; font-size: 0.85rem; margin: 0 0 1rem;">
+          Archived tasks — set a card's status back to something else to bring it back onto the board.
+        </p>
+        <div id="kanbanArchivedList" class="kanban-archived-list"></div>
+      </div>
+
     </div>
   </main>
 
@@ -125,7 +137,7 @@
               <option value="todo">To Do</option>
               <option value="in_progress">In Progress</option>
               <option value="in_review">In Review</option>
-              <option value="done">Done</option>
+              <option value="archived">Archived</option>
             </select>
           </div>
 

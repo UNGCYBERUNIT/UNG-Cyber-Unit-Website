@@ -3882,7 +3882,7 @@ describe('PATCH /api/kanban/items/:id', () => {
       new Request('https://example.com/api/kanban/items/5', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Cookie: cookie },
-        body: JSON.stringify({ status: 'done' }),
+        body: JSON.stringify({ status: 'archived' }),
       }),
       { JWT_SECRET: SECRET, DB: mockDB() },
     );
@@ -3895,7 +3895,7 @@ describe('PATCH /api/kanban/items/:id', () => {
       new Request('https://example.com/api/kanban/items/999', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Cookie: cookie },
-        body: JSON.stringify({ status: 'done' }),
+        body: JSON.stringify({ status: 'archived' }),
       }),
       { JWT_SECRET: SECRET, DB: mockDB() },
     );
