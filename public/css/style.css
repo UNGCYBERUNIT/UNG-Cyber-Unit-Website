@@ -2372,6 +2372,7 @@ footer {
   border-radius: 6px;
   padding: 0.75rem;
   cursor: grab;
+  min-width: 0; /* let the title wrap/break instead of forcing the flex item wider */
 }
 
 .kanban-card.dragging { opacity: 0.4; }
@@ -2381,6 +2382,7 @@ footer {
   font-size: 0.88rem;
   font-weight: 600;
   margin-bottom: 0.4rem;
+  overflow-wrap: anywhere; /* break long unbroken strings (e.g. "Foo/BarBazQux") instead of overflowing the card */
 }
 
 .kanban-card-meta {
