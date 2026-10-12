@@ -2344,6 +2344,17 @@ footer {
 
 .kanban-filter-wrap { position: relative; }
 
+.kanban-sort-select {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text);
+  font-family: 'Exo 2', sans-serif;
+  font-size: 0.85rem;
+}
+.kanban-sort-select:focus { border-color: var(--accent); outline: none; }
+
 .kanban-filter-count {
   display: inline-block;
   background: var(--accent);

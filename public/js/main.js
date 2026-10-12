@@ -2210,6 +2210,29 @@ async function initKanbanPage() {
     return true;
   }
 
+  let sortMode = 'manual';
+  const PRIORITY_RANK = { highest: 5, high: 4, medium: 3, low: 2, lowest: 1 };
+
+  // 'manual' preserves drag order (sort_order, ascending — the only mode
+  // drag-and-drop reordering within a column actually affects; see the
+  // drop handler below). Every other mode is a pure display sort that
+  // ignores sort_order entirely.
+  function sortItems(arr) {
+    const sorted = [...arr];
+    switch (sortMode) {
+      case 'modified':
+        return sorted.sort((a, b) => (b.updated_at ?? b.created_at) - (a.updated_at ?? a.created_at));
+      case 'priority':
+        return sorted.sort((a, b) => PRIORITY_RANK[b.priority] - PRIORITY_RANK[a.priority]);
+      case 'az':
+        return sorted.sort((a, b) => a.title.localeCompare(b.title));
+      case 'za':
+        return sorted.sort((a, b) => b.title.localeCompare(a.title));
+      default:
+        return sorted.sort((a, b) => a.sort_order - b.sort_order);
+    }
+  }
+
   function updateFilterCount() {
     const count = activeFilters.priorities.size + activeFilters.types.size + (activeFilters.assignee ? 1 : 0);
     const badge = document.getElementById('kanbanFilterCount');
@@ -2291,7 +2314,7 @@ async function initKanbanPage() {
   function renderBoard() {
     const topLevel = items.filter(i => !i.parent_id);
     board.innerHTML = KANBAN_BOARD_STATUSES.map(({ key, label }) => {
-      const colItems = topLevel.filter(i => i.status === key && isVisible(i) && passesFilters(i)).sort((a, b) => a.sort_order - b.sort_order);
+      const colItems = sortItems(topLevel.filter(i => i.status === key && isVisible(i) && passesFilters(i)));
       return `
         <div class="kanban-column">
           <div class="kanban-column-header" data-status="${key}" title="New ${escHtml(label)} card"><span>${escHtml(label)}</span><span class="kanban-column-count">${colItems.length}</span></div>
@@ -2329,6 +2352,24 @@ async function initKanbanPage() {
         const id = parseInt(e.dataTransfer.getData('text/plain'), 10);
         const newStatus = list.dataset.status;
 
+        // Outside 'manual' sort, the visible order is computed by
+        // sortItems() and ignores sort_order entirely, so there's no
+        // meaningful "drop position" to record — just update the moved
+        // card's status (a drop within its own column is then a no-op,
+        // since nothing actually changed).
+        if (sortMode !== 'manual') {
+          const dragged = items.find(i => i.id === id);
+          if (dragged && dragged.status !== newStatus) {
+            await fetch(`/api/kanban/items/${id}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ status: newStatus }),
+            });
+            await loadAll();
+          }
+          return;
+        }
+
         // Figure out drop position among the target column's existing cards
         // by comparing the pointer's y against each card's vertical midpoint.
         const cardEls = [...list.querySelectorAll('.kanban-card')].filter(el => parseInt(el.dataset.id, 10) !== id);
@@ -2355,7 +2396,7 @@ async function initKanbanPage() {
   // reorder or drag between once something's archived. Still respects
   // search/filters, same as the board and calendar.
   function renderArchived() {
-    const archived = items.filter(i => i.status === 'archived' && isVisible(i) && passesFilters(i));
+    const archived = sortItems(items.filter(i => i.status === 'archived' && isVisible(i) && passesFilters(i)));
     const list = document.getElementById('kanbanArchivedList');
     list.innerHTML = archived.length
       ? archived.map(i => cardHtml(i, { draggable: false })).join('')
@@ -2456,6 +2497,13 @@ async function initKanbanPage() {
     searchQuery = e.target.value.trim();
     renderBoard();
     renderCalendar();
+    renderArchived();
+  });
+
+  document.getElementById('kanbanSortSelect').addEventListener('change', e => {
+    sortMode = e.target.value;
+    renderBoard();
+    renderArchived();
   });
 
   // ── Filter menu ──
@@ -2465,6 +2513,7 @@ async function initKanbanPage() {
     updateFilterCount();
     renderBoard();
     renderCalendar();
+    renderArchived();
   }
 
   document.querySelectorAll('.kanban-filter-priority').forEach(cb => {
