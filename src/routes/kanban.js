@@ -293,7 +293,14 @@ export async function handleKanbanRoutes(request, env, url, path, secureCookie) 
     const existing = await env.DB.prepare('SELECT title FROM kanban_items WHERE id = ?').bind(idMatch[1]).first();
     if (!existing) return jsonResponse({ error: 'Item not found' }, 404);
 
+    // parent_id has a FOREIGN KEY back to this same table with no ON DELETE
+    // behavior, so deleting a card that still has subtasks pointing at it
+    // would violate that constraint. Detach them (promote to top-level
+    // cards) rather than cascading the delete into them — losing a
+    // subtask's whole record just because its parent was cleaned up would
+    // be a surprising, silent data loss for something this low-stakes.
     await env.DB.batch([
+      env.DB.prepare('UPDATE kanban_items SET parent_id = NULL WHERE parent_id = ?').bind(idMatch[1]),
       env.DB.prepare('DELETE FROM kanban_items WHERE id = ?').bind(idMatch[1]),
       logAudit(env, {
         actorId: session.sub, actorName: session.username, action: 'kanban.delete', target: existing.title,

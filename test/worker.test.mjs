@@ -3885,6 +3885,28 @@ describe('DELETE /api/kanban/items/:id', () => {
     assert.ok(batchCall.sqls.some(sql => /DELETE FROM kanban_items WHERE id = \?/.test(sql)));
     assert.ok(batchCall.sqls.some(sql => /INSERT INTO audit_log/.test(sql)));
   });
+
+  test('should detach any subtasks (parent_id -> NULL) before deleting, not fail on the FK constraint', async () => {
+    // parent_id is a self-referencing FOREIGN KEY with no ON DELETE
+    // behavior, so a delete that doesn't clear child rows' parent_id first
+    // would violate it. Assert the UPDATE runs in the same batch, before
+    // the DELETE.
+    const db = mockAuditActionDB({
+      first: [[/SELECT title FROM kanban_items WHERE id = \?/, { title: 'Parent card with subtasks' }]],
+    });
+    const cookie = await sessionCookieFor({ sub: 1, username: 'inst', role: 'instructor' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/kanban/items/5', { method: 'DELETE', headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 200);
+    const batchCall = db.calls.find(c => c.op === 'batch');
+    const updateIdx = batchCall.sqls.findIndex(sql => /UPDATE kanban_items SET parent_id = NULL WHERE parent_id = \?/.test(sql));
+    const deleteIdx = batchCall.sqls.findIndex(sql => /DELETE FROM kanban_items WHERE id = \?/.test(sql));
+    assert.ok(updateIdx >= 0, 'expected a parent_id-detach UPDATE in the batch');
+    assert.ok(updateIdx < deleteIdx, 'the detach UPDATE must run before the DELETE');
+    assert.deepEqual(batchCall.bindings[updateIdx], ['5']);
+  });
 });
 
 describe('Unknown routes', () => {
