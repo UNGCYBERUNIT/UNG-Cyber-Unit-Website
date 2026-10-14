@@ -2296,7 +2296,13 @@ async function initKanbanPage() {
   // visible alongside it to drop onto, so offering a drag handle there
   // would just be misleading.
   function cardHtml(item, { draggable = true } = {}) {
-    const due = item.due_date ? new Date(item.due_date * 1000).toLocaleDateString() : '';
+    // due_date is stored as the UTC midnight of the picked calendar day (see
+    // validateItemFields()), so it must be displayed with UTC date parts —
+    // a local toLocaleDateString() would shift it a day earlier for anyone
+    // west of UTC.
+    const due = item.due_date
+      ? new Date(item.due_date * 1000).toLocaleDateString(undefined, { timeZone: 'UTC' })
+      : '';
     const children = items.filter(i => i.parent_id === item.id);
     return `
       <div class="kanban-card" ${draggable ? 'draggable="true"' : ''} data-id="${item.id}">
@@ -2703,10 +2709,15 @@ async function initKanbanPage() {
     const firstDay = new Date(year, month, 1).getDay();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
     const byDay = {};
+    // due_date is stored as the UTC midnight of the picked calendar day (see
+    // validateItemFields()), so it must be grouped by its UTC date parts —
+    // local getters would shift it a day earlier for anyone west of UTC,
+    // landing items in the wrong cell (or the wrong month entirely near a
+    // month boundary).
     items.filter(i => i.due_date && isVisible(i) && passesFilters(i)).forEach(i => {
       const d = new Date(i.due_date * 1000);
-      if (d.getFullYear() === year && d.getMonth() === month) {
-        (byDay[d.getDate()] ??= []).push(i);
+      if (d.getUTCFullYear() === year && d.getUTCMonth() === month) {
+        (byDay[d.getUTCDate()] ??= []).push(i);
       }
     });
 
