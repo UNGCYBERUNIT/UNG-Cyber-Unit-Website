@@ -245,9 +245,16 @@ export async function handleAuthRoutes(request, env, url, path, secureCookie) {
           // never found, in junk or otherwise.
           from: 'CyberUnit @ UNG <email-verification@ungcyberunit.org>',
           to: email,
-          subject: 'Confirm your email — CyberUnit @ UNG',
-          text: `Confirm this email address by opening this link (expires in 1 hour):\n\n${confirmUrl}\n\nIf you didn't request this, you can ignore this email.`,
-          html: `<p>Confirm this email address by clicking the link below (expires in 1 hour):</p><p><a href="${confirmUrl}">${confirmUrl}</a></p><p>If you didn't request this, you can ignore this email.</p>`,
+          // Subject/body deliberately avoid "confirm"/"verify your email" —
+          // that exact phrase is one of the most commonly impersonated
+          // phishing lures (account-verification scams), so content-based
+          // spam scoring can flag it independent of sender reputation or
+          // link structure. The otherwise near-identical reset-password
+          // email (same link shape, same brand-new sender) went through
+          // fine, which points at this wording rather than the link itself.
+          subject: 'Finish linking your email — CyberUnit @ UNG',
+          text: `You started linking this email address to your CyberUnit @ UNG account. Finish the process by opening this link (expires in 1 hour):\n\n${confirmUrl}\n\nIf you didn't request this, you can ignore this email.`,
+          html: `<p>You started linking this email address to your CyberUnit @ UNG account. Finish the process by clicking the link below (expires in 1 hour):</p><p><a href="${confirmUrl}">${confirmUrl}</a></p><p>If you didn't request this, you can ignore this email.</p>`,
         });
       } catch (err) {
         console.error('verify-email send failed', err.message);
