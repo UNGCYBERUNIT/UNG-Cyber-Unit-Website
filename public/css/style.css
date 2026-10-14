@@ -2593,6 +2593,15 @@ footer {
 }
 .kanban-cal-day:not(.kanban-cal-empty):hover { border-color: var(--accent); }
 
+/* Today's cell: a persistent tint + bold day number, distinct from the
+   hover state above (which only changes the border and never fills the
+   background) so the two don't read as the same highlight. */
+.kanban-cal-day.kanban-cal-today {
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  border-color: var(--accent-dim);
+}
+.kanban-cal-day.kanban-cal-today .kanban-cal-day-num { color: var(--accent); font-weight: bold; }
+
 .kanban-cal-day-num { color: var(--text-muted); margin-bottom: 0.25rem; flex-shrink: 0; line-height: 1.2; }
 .kanban-cal-day.kanban-cal-empty { background: none; border: none; }
 

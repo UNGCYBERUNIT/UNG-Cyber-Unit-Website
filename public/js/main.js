@@ -2708,6 +2708,8 @@ async function initKanbanPage() {
 
     const firstDay = new Date(year, month, 1).getDay();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const today = new Date();
+    const isCurrentMonth = today.getFullYear() === year && today.getMonth() === month;
     const byDay = {};
     // due_date is stored as the UTC midnight of the picked calendar day (see
     // validateItemFields()), so it must be grouped by its UTC date parts —
@@ -2737,8 +2739,9 @@ async function initKanbanPage() {
       // above was grouped (d.getDate(), also local), so the date this cell
       // pre-fills is the same date its items are actually showing under.
       const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      const isToday = isCurrentMonth && day === today.getDate();
       cells += `
-        <div class="kanban-cal-day" data-date="${dateStr}" title="New card due ${dateStr}">
+        <div class="kanban-cal-day${isToday ? ' kanban-cal-today' : ''}" data-date="${dateStr}" title="New card due ${dateStr}">
           <div class="kanban-cal-day-num">${day}</div>
           <div class="kanban-cal-items">
             ${visible.map(i => `<span class="kanban-cal-item" data-id="${i.id}" title="${escHtml(i.title)}">${escHtml(i.title)}</span>`).join('')}
