@@ -3027,6 +3027,25 @@ describe('Audit log instrumentation', () => {
     assert.equal(batchCall.bindings[auditIdx][3], 'bob');
   });
 
+  test('DELETE /api/admin/users/:id should block with a specific reason instead of a raw FK failure, when the user still owns shared content', async () => {
+    const db = mockAuditActionDB({
+      first: [
+        [/SELECT username, role FROM users WHERE id = \?/, { username: 'bob', role: 'instructor' }],
+        [/SELECT COUNT\(\*\) AS n FROM kanban_items WHERE created_by = \?/, { n: 2 }],
+      ],
+    });
+    const cookie = await sessionCookieFor({ sub: 1, username: 'admin1', role: 'admin' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/admin/users/2', { method: 'DELETE', headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 409);
+    const data = await res.json();
+    assert.match(data.error, /2 Kanban card\(s\) \(as creator\)/);
+    // Nothing should have been deleted — no batch, no cascade.
+    assert.ok(!db.calls.some(c => c.op === 'batch'));
+  });
+
   test('POST /api/announcements should log an announcement.create entry', async () => {
     const db = mockAuditActionDB({});
     const cookie = await sessionCookieFor({ sub: 1, username: 'admin1', role: 'admin' });

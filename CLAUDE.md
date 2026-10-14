@@ -152,7 +152,24 @@ them would turn `audit_log` into a general activity feed (a different feature wi
 retention/volume shape), not the "who did the irreversible thing" record it's meant to be.
 **No PATCH/DELETE route for `audit_log` should ever be added** — not even a "clear log" admin
 button — that would defeat the feature's purpose; treat adding one as a deliberate,
-separately-reviewed decision, not a routine change.
+separately-reviewed decision, not a routine change. `audit_log.actor_id` has **no FOREIGN KEY**
+(schema.sql) — deliberately, not an oversight: the log must survive the actor's own account
+being deleted, which is why `actor_name` is a denormalized snapshot captured at insert time, not
+a join. A FK was there originally and silently blocked `DELETE /api/admin/users/:id` for any
+user who'd ever performed a single audited action — caught and fixed by recreating the table
+without it (SQLite has no `ALTER TABLE ... DROP CONSTRAINT`, so this is a create-new/copy/drop/
+rename, same pattern as any other FK-removal migration on this app).
+
+**Deleting a user account** (`DELETE /api/admin/users/:id`): cascades the account's own private
+data (`user_emails`, quiz/challenge history) but **blocks with a specific error** — rather than
+failing opaquely on a raw FK constraint — if the account still owns shared/instructor-managed
+content (`quiz_rooms`/`announcements`/`events`/`question_bank`/`kanban_items` as creator or
+Kanban assignee). That content is deliberately not auto-deleted or auto-reassigned: a Quiz Room
+or Kanban card isn't "owned" by its creator the way a linked email is (CLAUDE.md's Kanban
+section — no per-creator ownership model), so silently destroying it because the creating
+account got deleted would be a worse surprise than asking the admin to reassign/delete it first.
+`audit_log` is correctly excluded from this check (see above) — it's the one "owned by" table
+that's supposed to outlive the user.
 
 **Kanban Board** (see `docs/plan-kanban-board.md`): a Jira replacement — the club only ever
 used Jira's Kanban board feature, not its other modules, so `src/routes/kanban.js` reimplements
