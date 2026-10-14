@@ -163,13 +163,16 @@ rename, same pattern as any other FK-removal migration on this app).
 **Deleting a user account** (`DELETE /api/admin/users/:id`): cascades the account's own private
 data (`user_emails`, quiz/challenge history) but **blocks with a specific error** — rather than
 failing opaquely on a raw FK constraint — if the account still owns shared/instructor-managed
-content (`quiz_rooms`/`announcements`/`events`/`question_bank`/`kanban_items` as creator or
-Kanban assignee). That content is deliberately not auto-deleted or auto-reassigned: a Quiz Room
-or Kanban card isn't "owned" by its creator the way a linked email is (CLAUDE.md's Kanban
-section — no per-creator ownership model), so silently destroying it because the creating
+content as *creator* (`quiz_rooms`/`announcements`/`events`/`question_bank`/`kanban_items`, all
+NOT NULL `created_by` columns). That content is deliberately not auto-deleted or reassigned: a
+Quiz Room or Kanban card isn't "owned" by its creator the way a linked email is (CLAUDE.md's
+Kanban section — no per-creator ownership model), so silently destroying it because the creating
 account got deleted would be a worse surprise than asking the admin to reassign/delete it first.
-`audit_log` is correctly excluded from this check (see above) — it's the one "owned by" table
-that's supposed to outlive the user.
+Being the **assignee** of a Kanban card is different — `kanban_items.assigned_to` is nullable
+(unlike every `created_by` column here), so it's not checked as a blocker at all; the cascade
+just sets it back to `NULL` on every card assigned to the deleted account, same as unassignment
+through the normal edit API. `audit_log` is correctly excluded from this check (see above) —
+it's the one "owned by" table that's supposed to outlive the user.
 
 **Kanban Board** (see `docs/plan-kanban-board.md`): a Jira replacement — the club only ever
 used Jira's Kanban board feature, not its other modules, so `src/routes/kanban.js` reimplements

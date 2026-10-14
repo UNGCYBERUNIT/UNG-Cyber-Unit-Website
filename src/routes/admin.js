@@ -60,10 +60,14 @@ export async function handleAdminRoutes(request, env, url, path, secureCookie) {
     // creator, so silently destroying a room/announcement/card just
     // because the account that happened to create it got deleted would be
     // a worse surprise than blocking the delete with a clear reason.
-    // audit_log is NOT checked here — unlike these, it has no FK at all
-    // (schema.sql), by design: the log must survive the actor's account
-    // being deleted, which is the entire point of denormalizing actor_name
-    // onto each row.
+    // kanban_items.assigned_to is NOT checked here, unlike created_by —
+    // it's nullable (unlike every created_by column), so being someone's
+    // assigned card isn't a "you must deal with this first" relationship
+    // the way authorship is; the card just goes back to unassigned below.
+    // audit_log is NOT checked here either — unlike these, it has no FK at
+    // all (schema.sql), by design: the log must survive the actor's
+    // account being deleted, which is the entire point of denormalizing
+    // actor_name onto each row.
     const blockers = [];
     const checks = [
       ['quiz_rooms', 'created_by', 'Quiz Room(s)'],
@@ -71,7 +75,6 @@ export async function handleAdminRoutes(request, env, url, path, secureCookie) {
       ['events', 'created_by', 'event(s)'],
       ['question_bank', 'created_by', 'question bank template(s)'],
       ['kanban_items', 'created_by', 'Kanban card(s) (as creator)'],
-      ['kanban_items', 'assigned_to', 'Kanban card(s) (as assignee)'],
     ];
     for (const [table, column, label] of checks) {
       const row = await env.DB.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE ${column} = ?`).bind(targetId).first();
@@ -94,6 +97,7 @@ export async function handleAdminRoutes(request, env, url, path, secureCookie) {
     stmts.push(env.DB.prepare('DELETE FROM quiz_results WHERE user_id = ?').bind(targetId));
     stmts.push(env.DB.prepare('DELETE FROM challenge_completions WHERE user_id = ?').bind(targetId));
     stmts.push(env.DB.prepare('DELETE FROM user_emails WHERE user_id = ?').bind(targetId));
+    stmts.push(env.DB.prepare('UPDATE kanban_items SET assigned_to = NULL WHERE assigned_to = ?').bind(targetId));
     stmts.push(env.DB.prepare('DELETE FROM users WHERE id = ?').bind(targetId));
     stmts.push(logAudit(env, {
       actorId: session.sub, actorName: session.username, action: 'user.delete',

@@ -3027,6 +3027,26 @@ describe('Audit log instrumentation', () => {
     assert.equal(batchCall.bindings[auditIdx][3], 'bob');
   });
 
+  test('DELETE /api/admin/users/:id should unassign (not block on) Kanban cards where the user is only the assignee', async () => {
+    // kanban_items.assigned_to is nullable, unlike created_by, so being
+    // assigned a card isn't checked as a blocker at all — only the UPDATE
+    // in the cascade batch should reference it.
+    const db = mockAuditActionDB({
+      first: [[/SELECT username, role FROM users WHERE id = \?/, { username: 'bob', role: 'instructor' }]],
+    });
+    const cookie = await sessionCookieFor({ sub: 1, username: 'admin1', role: 'admin' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/admin/users/2', { method: 'DELETE', headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 200);
+    assert.ok(!db.calls.some(c => /SELECT COUNT\(\*\) AS n FROM kanban_items WHERE assigned_to = \?/.test(c.sql)));
+    const batchCall = db.calls.find(c => c.op === 'batch');
+    const unassignCall = batchCall.sqls.findIndex(sql => /UPDATE kanban_items SET assigned_to = NULL WHERE assigned_to = \?/.test(sql));
+    assert.ok(unassignCall >= 0);
+    assert.equal(batchCall.bindings[unassignCall][0], 2);
+  });
+
   test('DELETE /api/admin/users/:id should block with a specific reason instead of a raw FK failure, when the user still owns shared content', async () => {
     const db = mockAuditActionDB({
       first: [
