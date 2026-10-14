@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 import worker, {
+  sendKanbanDueDateReminders,
   base64ImageMatchesType,
   parseCookies,
   timingSafeEqual,
@@ -3996,6 +3997,132 @@ describe('DELETE /api/kanban/items/:id', () => {
     assert.ok(updateIdx >= 0, 'expected a parent_id-detach UPDATE in the batch');
     assert.ok(updateIdx < deleteIdx, 'the detach UPDATE must run before the DELETE');
     assert.deepEqual(batchCall.bindings[updateIdx], ['5']);
+  });
+});
+
+describe('sendKanbanDueDateReminders (worker.js scheduled() cron)', () => {
+  test('should no-op when RESEND_API_KEY is unset', async () => {
+    const db = mockDB();
+    await sendKanbanDueDateReminders({ DB: db, RESEND_API_KEY: undefined });
+    assert.equal(db.calls.length, 0);
+  });
+
+  test('should email the assignee and mark due_reminder_sent_at for a card due within 24h', async () => {
+    const calls = [];
+    const db = {
+      prepare(sql) {
+        return {
+          bind: (...bindings) => ({
+            all: async () => {
+              calls.push({ sql, bindings, op: 'all' });
+              if (/SELECT k\.id, k\.title, k\.due_date, u\.email/.test(sql)) {
+                return { results: [{ id: 42, title: 'Finish report', due_date: 1700000000, email: 'joshuaacklen@gmail.com' }] };
+              }
+              return { results: [] };
+            },
+            run: async () => { calls.push({ sql, bindings, op: 'run' }); return { meta: { changes: 1 } }; },
+          }),
+        };
+      },
+    };
+    const originalFetch = globalThis.fetch;
+    const fetchCalls = [];
+    globalThis.fetch = async (url, opts) => {
+      fetchCalls.push({ url, opts });
+      return new Response('{}', { status: 200 });
+    };
+    try {
+      await sendKanbanDueDateReminders({ DB: db, RESEND_API_KEY: 'test-key' });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+
+    assert.equal(fetchCalls.length, 1);
+    const body = JSON.parse(fetchCalls[0].opts.body);
+    assert.equal(body.to, 'joshuaacklen@gmail.com');
+    assert.match(body.subject, /Finish report/);
+
+    const updateCall = calls.find(c => c.op === 'run' && /UPDATE kanban_items SET due_reminder_sent_at/.test(c.sql));
+    assert.ok(updateCall, 'expected due_reminder_sent_at to be set after a successful send');
+    assert.equal(updateCall.bindings[1], 42);
+  });
+
+  test('should skip a row with no verified email without crashing', async () => {
+    const db = {
+      prepare(sql) {
+        return {
+          bind: (...bindings) => ({
+            all: async () => {
+              if (/SELECT k\.id, k\.title, k\.due_date, u\.email/.test(sql)) {
+                return { results: [{ id: 42, title: 'No email', due_date: 1700000000, email: null }] };
+              }
+              return { results: [] };
+            },
+            run: async () => ({ meta: { changes: 0 } }),
+          }),
+        };
+      },
+    };
+    const originalFetch = globalThis.fetch;
+    let fetchCalled = false;
+    globalThis.fetch = async () => { fetchCalled = true; return new Response('{}', { status: 200 }); };
+    try {
+      await sendKanbanDueDateReminders({ DB: db, RESEND_API_KEY: 'test-key' });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    assert.equal(fetchCalled, false);
+  });
+});
+
+describe('PATCH /api/kanban/items/:id due_reminder_sent_at reset', () => {
+  test('should reset due_reminder_sent_at when due_date changes', async () => {
+    const db = mockAuditActionDB({
+      first: [[/SELECT \* FROM kanban_items WHERE id = \?/, {
+        id: 5, title: 'Old Title', description: '', item_type: 'task', status: 'todo',
+        priority: 'medium', sort_order: 0, parent_id: null, assigned_to: null,
+        due_date: 1700000000, due_reminder_sent_at: 1699999000,
+        created_by: 2, created_at: 1000,
+      }]],
+    });
+    const cookie = await sessionCookieFor({ sub: 1, username: 'inst', role: 'instructor' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/kanban/items/5', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Cookie: cookie },
+        body: JSON.stringify({ due_date: '2030-01-01' }),
+      }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 200);
+    const updateCall = db.calls.find(c => c.op === 'run' && /UPDATE kanban_items\s+SET/.test(c.sql));
+    assert.ok(updateCall);
+    // due_date, due_reminder_sent_at, updated_at, id — in that order at the tail of the bind list.
+    assert.equal(updateCall.bindings[9], null);
+  });
+
+  test('should preserve due_reminder_sent_at when neither due_date nor assignee changes', async () => {
+    const db = mockAuditActionDB({
+      first: [[/SELECT \* FROM kanban_items WHERE id = \?/, {
+        id: 5, title: 'Old Title', description: '', item_type: 'task', status: 'todo',
+        priority: 'medium', sort_order: 0, parent_id: null, assigned_to: null,
+        due_date: 1700000000, due_reminder_sent_at: 1699999000,
+        created_by: 2, created_at: 1000,
+      }]],
+    });
+    const cookie = await sessionCookieFor({ sub: 1, username: 'inst', role: 'instructor' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/kanban/items/5', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Cookie: cookie },
+        body: JSON.stringify({ status: 'in_progress' }),
+      }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 200);
+    const updateCall = db.calls.find(c => c.op === 'run' && /UPDATE kanban_items\s+SET/.test(c.sql));
+    assert.ok(updateCall);
+    assert.equal(updateCall.bindings[9], 1699999000);
   });
 });
 

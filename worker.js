@@ -47,7 +47,7 @@ import { handleFeedbackRoutes } from './src/routes/feedback.js';
 import { handleRoomsRoutes } from './src/routes/rooms.js';
 import { handleQuestionBankRoutes } from './src/routes/question-bank.js';
 import { handleInstructorRoutes } from './src/routes/instructor.js';
-import { handleKanbanRoutes } from './src/routes/kanban.js';
+import { handleKanbanRoutes, sendKanbanDueDateReminders } from './src/routes/kanban.js';
 import { handleSeoRoutes } from './src/routes/seo.js';
 import { handleTopicsRoutes } from './src/routes/topics.js';
 import { handleChallengesRoutes } from './src/routes/challenges.js';
@@ -92,6 +92,7 @@ import {
 // Every name re-exported here now actually lives in src/ — see the imports
 // above for exactly where.
 export {
+  sendKanbanDueDateReminders,
   base64ImageMatchesType,
   parseCookies,
   timingSafeEqual,
@@ -299,6 +300,10 @@ export default {
           .run()
       );
     }
+
+    // Kanban due-date reminder emails — see sendKanbanDueDateReminders() in
+    // src/routes/kanban.js for the one-shot-per-card logic.
+    ctx.waitUntil(sendKanbanDueDateReminders(env));
 
     // Guest accounts that never upgraded (see /api/auth/upgrade) are dead
     // weight once their session has expired — nothing can log back into

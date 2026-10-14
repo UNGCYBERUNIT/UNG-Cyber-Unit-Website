@@ -273,6 +273,7 @@ CREATE TABLE IF NOT EXISTS kanban_items (
   parent_id   INTEGER,
   assigned_to INTEGER,
   due_date    INTEGER,
+  due_reminder_sent_at INTEGER, -- set once the due-date reminder email fires, so the hourly cron (worker.js scheduled()) never re-sends it on a later tick
   created_by  INTEGER NOT NULL,
   created_at  INTEGER NOT NULL,
   updated_at  INTEGER,

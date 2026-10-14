@@ -118,6 +118,45 @@ async function notifyAssignee(env, { assignedTo, title, id }) {
   }
 }
 
+// Due-date reminder emails — called from worker.js's hourly scheduled()
+// cron, not from any request path. One-shot per card: due_reminder_sent_at
+// (schema.sql) is set the first time a card's reminder fires and never
+// cleared except by a PATCH that actually changes due_date/assigned_to (see
+// the PATCH handler below), so a card is never mailed twice for the same
+// due date. The 24h lookahead also catches already-overdue cards (due_date
+// in the past) rather than requiring exact timing, so a cron outage or a
+// freshly-added due date on an old card still gets exactly one reminder.
+export async function sendKanbanDueDateReminders(env) {
+  if (!env.DB || !env.RESEND_API_KEY) return;
+  const cutoff = Math.floor(Date.now() / 1000) + 24 * 60 * 60;
+  const { results } = await env.DB.prepare(`
+    SELECT k.id, k.title, k.due_date, u.email
+    FROM kanban_items k
+    JOIN users u ON u.id = k.assigned_to
+    WHERE k.due_date IS NOT NULL
+      AND k.due_reminder_sent_at IS NULL
+      AND k.status != 'archived'
+      AND k.due_date <= ?
+  `).bind(cutoff).all();
+
+  for (const row of results) {
+    if (!row.email) continue;
+    const dueStr = new Date(row.due_date * 1000).toLocaleDateString('en-US', { timeZone: 'UTC', month: 'long', day: 'numeric', year: 'numeric' });
+    try {
+      await sendResendEmail(env, {
+        to: row.email,
+        subject: `Kanban card due soon — ${row.title}`,
+        text: `"${row.title}" is due ${dueStr} on the Cyber Unit Kanban board.\n\nView it: ${env.SITE_ORIGIN ?? 'https://ungcyberunit.org'}/kanban`,
+        html: `<p><strong>${row.title}</strong> is due ${dueStr} on the Cyber Unit Kanban board.</p><p><a href="${env.SITE_ORIGIN ?? 'https://ungcyberunit.org'}/kanban">View the board</a></p>`,
+      });
+    } catch (err) {
+      console.error('kanban due-date reminder failed', err.message);
+      continue; // leave due_reminder_sent_at NULL so the next cron tick retries
+    }
+    await env.DB.prepare('UPDATE kanban_items SET due_reminder_sent_at = ? WHERE id = ?').bind(Date.now(), row.id).run();
+  }
+}
+
 export async function handleKanbanRoutes(request, env, url, path, secureCookie) {
   if (!path.startsWith('/api/kanban')) return null;
 
@@ -291,13 +330,21 @@ export async function handleKanbanRoutes(request, env, url, path, secureCookie) 
       return jsonResponse({ error: 'Assignee must be an instructor or admin' }, 400);
     }
 
+    // A changed due date or assignee invalidates any reminder already sent
+    // for the old due_date/old assignee — reset so sendKanbanDueDateReminders()
+    // (worker.js's hourly cron) re-evaluates this card on its next tick
+    // instead of treating it as already handled.
+    const dueReminderSentAt = (parsed.dueDate !== existing.due_date || parsed.assignedTo !== existing.assigned_to)
+      ? null
+      : existing.due_reminder_sent_at;
+
     await env.DB.prepare(`
       UPDATE kanban_items
-      SET title = ?, description = ?, item_type = ?, status = ?, priority = ?, sort_order = ?, parent_id = ?, assigned_to = ?, due_date = ?, updated_at = ?
+      SET title = ?, description = ?, item_type = ?, status = ?, priority = ?, sort_order = ?, parent_id = ?, assigned_to = ?, due_date = ?, due_reminder_sent_at = ?, updated_at = ?
       WHERE id = ?
     `).bind(
       parsed.title, parsed.description, parsed.itemType, parsed.status, parsed.priority,
-      merged.sort_order, parsed.parentId, parsed.assignedTo, parsed.dueDate, Date.now(), idMatch[1]
+      merged.sort_order, parsed.parentId, parsed.assignedTo, parsed.dueDate, dueReminderSentAt, Date.now(), idMatch[1]
     ).run();
 
     if (parsed.assignedTo && parsed.assignedTo !== existing.assigned_to) {

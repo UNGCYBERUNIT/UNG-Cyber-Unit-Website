@@ -177,7 +177,7 @@ cybersec-basics/
 | `/challenges/:id` | Generic CTF module page (crypto-layers, hidden-in-plain-sight, crack-the-vault, web-exploitation) — briefing, downloads or live target, toolbox, multi-part flag submission, instructor answer key. Server-rendered from the `ctfModules` array in `src/data/challenges.js`; unknown or legacy ids 404 |
 | `/lab/web-exploitation-portal` | The "Breach the Portal" CTF module's live target — a fake employee login page, genuinely SQL-injectable by design (see `CLAUDE.md`'s "Web Exploitation Lab" section). `noindex` |
 | `/instructor` | Instructor panel — create/manage Quiz Rooms, grade free responses, link to the Kanban Board |
-| `/kanban` | Kanban Board — Jira replacement. Instructor/admin only (read and write). Shared board, drag-and-drop cards across Idea/To Do/In Progress/In Review columns (status change persists regardless of the active sort); a separate hidden-until-selected Archived tab holds finished cards instead of a Done column. Search, a Priority/Type/Assignee filter menu, and a Manual/Recently Modified/Priority/A-Z/Z-A sort apply to both the board and the archived list. Clicking a column header or an empty calendar day pre-fills a new card's status/due date; Esc discards the create/edit modal without saving. CSV import (with a format guide) bulk-creates cards; Export CSV downloads the whole board (not just the current search/filter view) in the same column shape, so an exported file re-imports unchanged. Assignment is restricted to instructor+ accounts and emails the assignee. Due-date calendar view. `noindex`, not in the sitemap. See `docs/plan-kanban-board.md`. |
+| `/kanban` | Kanban Board — Jira replacement. Instructor/admin only (read and write). Shared board, drag-and-drop cards across Idea/To Do/In Progress/In Review columns (status change persists regardless of the active sort); a separate hidden-until-selected Archived tab holds finished cards instead of a Done column. Search, a Priority/Type/Assignee filter menu, and a Manual/Recently Modified/Priority/A-Z/Z-A sort apply to both the board and the archived list. Clicking a column header or an empty calendar day pre-fills a new card's status/due date; Esc discards the create/edit modal without saving. CSV import (with a format guide) bulk-creates cards; Export CSV downloads the whole board (not just the current search/filter view) in the same column shape, so an exported file re-imports unchanged. Assignment is restricted to instructor+ accounts and emails the assignee; the assignee also gets a one-time due-date reminder email as the deadline approaches. Due-date calendar view, with weekday headers and today's cell highlighted. `noindex`, not in the sitemap. See `docs/plan-kanban-board.md`. |
 | `/student-hub` | Student-only quiz rooms — gated to the admin-assigned `student` role and above |
 | `/quiz` | **Join Room** — browse public Quiz Rooms, or enter a private room code |
 | `/quiz/:code` | Student — take a live Quiz Room / view your result |
@@ -257,7 +257,11 @@ self-prune on write; this just clears residuals once traffic stops), and
 batch-deletes guest accounts whose 2-hour session has expired and who never
 upgraded — there's no password to log back into them, so they'd otherwise
 accumulate forever. Accounts that did upgrade are never touched, regardless
-of age, since their role is no longer `guest`.
+of age, since their role is no longer `guest`. The same tick also runs
+`sendKanbanDueDateReminders()` — emails a Kanban card's assignee once its
+due date is within 24h (or already past), tracked by
+`kanban_items.due_reminder_sent_at` so it never fires twice for the same
+due date.
 
 ---
 

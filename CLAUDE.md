@@ -182,7 +182,17 @@ assignee has no verified `users.email` or `RESEND_API_KEY` isn't set. There is *
 notification infrastructure in this app** (no service worker, no VAPID keys) — don't add one
 casually for this or any future feature; it's a meaningfully bigger lift than it looks (new
 service worker, subscription lifecycle, payload encryption) and wasn't what "push notification"
-turned out to mean here. The due-date calendar view on `/kanban` reads the same
+turned out to mean here. **Due-date reminder emails** (`sendKanbanDueDateReminders()` in
+`src/routes/kanban.js`, called from `worker.js`'s existing hourly `scheduled()` cron) are a
+separate notification from the assignment email above — one-shot per card, tracked by
+`kanban_items.due_reminder_sent_at` (schema.sql): a card's assignee gets exactly one reminder
+once its `due_date` falls within 24h (including cards already overdue, so a cron outage or a
+newly-added due date on an old card still gets caught), and never a second one for that same
+due date. The PATCH handler resets `due_reminder_sent_at` back to `NULL` whenever `due_date` or
+`assigned_to` actually changes, so a pushed-out deadline or a reassignment is eligible for a
+fresh reminder rather than being treated as already handled. Same `RESEND_API_KEY`/verified-
+email guard as the assignment notification; no per-row emails fire from CSV import for the same
+mail-bomb reason. The due-date calendar view on `/kanban` reads the same
 already-fetched item list client-side — it is **not** synced with the public `/events` table;
 those are different audiences (internal planning deadline vs. club-wide event), and auto-
 syncing them would violate the "snapshot, not live reference" principle used elsewhere in this
