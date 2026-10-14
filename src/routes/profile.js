@@ -12,9 +12,17 @@ export async function handleProfileRoutes(request, env, url, path, secureCookie)
     if (!session) return jsonResponse({ error: 'Not authenticated' }, 401);
 
     const user = await env.DB.prepare(
-      'SELECT id, username, role, avatar, created_at, is_public, email, email_pending, discord_id, discord_username FROM users WHERE id = ?'
+      'SELECT id, username, role, avatar, created_at, is_public, discord_id, discord_username FROM users WHERE id = ?'
     ).bind(session.sub).first();
     if (!user) return jsonResponse({ error: 'Not authenticated' }, 401);
+
+    // Up to MAX_EMAILS_PER_USER (auth.js) rows, each either verified
+    // (email set) or still awaiting confirmation (pendingEmail set) — see
+    // user_emails in schema.sql.
+    const { results: emailRows } = await env.DB.prepare(
+      'SELECT id, email, pending_email FROM user_emails WHERE user_id = ? ORDER BY created_at ASC'
+    ).bind(session.sub).all();
+    const emails = (emailRows ?? []).map(r => ({ id: r.id, email: r.email ?? null, pendingEmail: r.pending_email ?? null }));
 
     const { role, cookie } = await refreshRoleIfStale(env, session, user.role, secureCookie);
     const profileExtraHeaders = cookie ? { 'Set-Cookie': cookie } : {};
@@ -47,8 +55,7 @@ export async function handleProfileRoutes(request, env, url, path, secureCookie)
       avatar: user.avatar ?? null,
       created_at: user.created_at,
       isPublic: !!user.is_public,
-      email: user.email ?? null,
-      emailPending: user.email_pending ?? null,
+      emails,
       roomAttempts: roomAttempts ?? [],
       badges: pathwayBadges(doneTopics),
       rank,

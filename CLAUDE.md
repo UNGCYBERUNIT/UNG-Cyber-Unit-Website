@@ -248,11 +248,29 @@ them to the exact same "never leak more than the whitelist" bar as `/api/user/:u
 `idx_users_discord_id` is a partial unique index (same shape as `idx_users_email`) — a
 Discord account can only ever be linked to one website account.
 
-**Email verification (general-purpose, role-decoupled):** any signed-in non-guest member can
-confirm any email address on their account via `/api/auth/verify-email/request` +
-`/api/auth/verify-email/confirm` (`src/routes/auth.js`) — no domain restriction, and confirming does
-**not** grant any role by itself. It's purely an identity/recovery marker (also backing
-forgot-password/forgot-username below). `users.role` still has a `'student'` tier (ranked
+**Email verification (general-purpose, role-decoupled, multi-email):** any signed-in non-guest
+member can link up to `MAX_EMAILS_PER_USER` (3, `src/routes/auth.js`) email addresses on their
+account via `/api/auth/verify-email/request` + `/api/auth/verify-email/confirm` — no domain
+restriction, and confirming does **not** grant any role by itself. Each address is its own row
+in `user_emails` (schema.sql) — `email` set once verified, `pending_email` while awaiting
+confirmation — rather than a single `users.email` column, so an account can have several
+verified addresses at once (e.g. personal + school), each independently addable/removable via
+`DELETE /api/auth/emails/:id` (ownership-checked, no re-auth prompt, same as every other
+self-service profile mutation). "Replace an address" is remove-then-add from the client, not a
+separate endpoint. Re-requesting an address that's already pending on the *same* account
+reuses that row (treated as a resend, respecting its cooldown) rather than consuming a new
+slot — only a genuinely new address counts against the cap. `GET /api/profile` returns the
+full `emails: [{id, email, pendingEmail}]` array; the profile page (`public/profile.html`'s
+"Linked Emails" section, `renderEmailVerification()` in `public/js/main.js`) renders one row
+per slot plus an add-another form while under the cap. Anything that needs "the" email for a
+given account — Kanban's assignment/due-date-reminder notifications
+(`src/routes/kanban.js`) — sends to **every** verified address on file, not a designated
+"primary", since there's nothing to pick: `Resend`'s `to` field accepts an array.
+`forgot-password`/`forgot-username` are unaffected in spirit — both still look up by whichever
+address the requester types in (now via a `user_emails` JOIN instead of `users.email`) — proving
+you know *an* email linked to the account has always been the actual security property, not
+"the" email. It's purely an identity/recovery marker (also backing forgot-password/
+forgot-username below). `users.role` still has a `'student'` tier (ranked
 above `member`, below `instructor` in `ROLE_RANK`, gates Quiz Rooms with
 `visibility='student'` and `/student-hub`) but it's **admin-assigned only**
 (`PATCH /api/admin/users/:id`) — there's currently no automatic path to it.

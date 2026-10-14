@@ -199,8 +199,8 @@ function mockRoleRefreshDB(dbRole) {
       const first = async () => {
         if (/SELECT token_version FROM users WHERE id = \?/.test(sql)) return { token_version: 0 };
         if (/SELECT avatar, last_seen_announcements, role/.test(sql)) return { avatar: null, last_seen_announcements: null, role: dbRole };
-        if (/SELECT id, username, role, avatar, created_at, is_public, email, email_pending/.test(sql)) {
-          return { id: 1, username: 'alice', role: dbRole, avatar: null, created_at: 1000, is_public: 0, email: null, email_pending: null };
+        if (/SELECT id, username, role, avatar, created_at, is_public, discord_id, discord_username/.test(sql)) {
+          return { id: 1, username: 'alice', role: dbRole, avatar: null, created_at: 1000, is_public: 0 };
         }
         if (/MAX\(created_at\)/.test(sql)) return { latest: null };
         return null;
@@ -1390,6 +1390,183 @@ describe('GET /api/profile', () => {
       { JWT_SECRET: SECRET, DB: mockDB() },
     );
     assert.equal(res.status, 401);
+  });
+});
+
+// ─── Multi-email linking (user_emails — up to MAX_EMAILS_PER_USER per account) ──
+
+// A generic mock for the user_emails-backed auth routes: each named query
+// result is supplied by the test, everything else falls through to a safe
+// default (null row / empty list), and every call is recorded for assertion.
+function mockUserEmailsDB({ existingForThisUser = null, takenByOther = null, count = 0, deleteOwnerRow = null } = {}) {
+  const calls = [];
+  return {
+    calls,
+    prepare(sql) {
+      return {
+        bind: (...bindings) => ({
+          first: async () => {
+            calls.push({ sql, bindings, op: 'first' });
+            if (/SELECT token_version FROM users WHERE id = \?/.test(sql)) return { token_version: 0 };
+            if (/SELECT id, email, verify_last_sent_at FROM user_emails WHERE user_id = \? AND \(email = \? OR pending_email = \?\)/.test(sql)) {
+              return existingForThisUser;
+            }
+            if (/SELECT id FROM user_emails WHERE \(email = \? OR pending_email = \?\) AND user_id != \?/.test(sql)) {
+              return takenByOther;
+            }
+            if (/SELECT COUNT\(\*\) AS count FROM user_emails WHERE user_id = \?/.test(sql)) {
+              return { count };
+            }
+            if (/SELECT user_id FROM user_emails WHERE id = \?/.test(sql)) {
+              return deleteOwnerRow;
+            }
+            return null;
+          },
+          run: async () => { calls.push({ sql, bindings, op: 'run' }); return { meta: { last_row_id: 55, changes: 1 } }; },
+          all: async () => { calls.push({ sql, bindings, op: 'all' }); return { results: [] }; },
+        }),
+      };
+    },
+  };
+}
+
+describe('POST /api/auth/verify-email/request (multi-email)', () => {
+  test('should insert a new pending row when the account has room', async () => {
+    const db = mockUserEmailsDB({ existingForThisUser: null, takenByOther: null, count: 0 });
+    const cookie = await sessionCookieFor({ sub: 1, username: 'alice', role: 'member' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/auth/verify-email/request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Cookie: cookie },
+        body: JSON.stringify({ email: 'alice@example.com' }),
+      }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 200);
+    const insertCall = db.calls.find(c => c.op === 'run' && /INSERT INTO user_emails/.test(c.sql));
+    assert.ok(insertCall, 'expected a new user_emails row to be inserted');
+  });
+
+  test('should reject a new address once the account already has MAX_EMAILS_PER_USER rows', async () => {
+    const db = mockUserEmailsDB({ existingForThisUser: null, takenByOther: null, count: 3 });
+    const cookie = await sessionCookieFor({ sub: 1, username: 'alice', role: 'member' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/auth/verify-email/request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Cookie: cookie },
+        body: JSON.stringify({ email: 'fourth@example.com' }),
+      }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 409);
+    const data = await res.json();
+    assert.match(data.error, /at most 3/);
+  });
+
+  test('should treat a resend of an already-pending address as an UPDATE, not a new row', async () => {
+    const db = mockUserEmailsDB({ existingForThisUser: { id: 7, email: null, verify_last_sent_at: null }, takenByOther: null, count: 1 });
+    const cookie = await sessionCookieFor({ sub: 1, username: 'alice', role: 'member' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/auth/verify-email/request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Cookie: cookie },
+        body: JSON.stringify({ email: 'still-pending@example.com' }),
+      }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 200);
+    assert.ok(!db.calls.some(c => c.op === 'run' && /INSERT INTO user_emails/.test(c.sql)), 'should not insert a new row');
+    const updateCall = db.calls.find(c => c.op === 'run' && /UPDATE user_emails SET verify_token_hash/.test(c.sql));
+    assert.ok(updateCall, 'expected the existing row to be updated');
+    assert.equal(updateCall.bindings[3], 7);
+  });
+
+  test('should reject an address already verified on this account', async () => {
+    const db = mockUserEmailsDB({ existingForThisUser: { id: 7, email: 'alice@example.com', verify_last_sent_at: null }, takenByOther: null, count: 1 });
+    const cookie = await sessionCookieFor({ sub: 1, username: 'alice', role: 'member' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/auth/verify-email/request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Cookie: cookie },
+        body: JSON.stringify({ email: 'alice@example.com' }),
+      }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 409);
+    const data = await res.json();
+    assert.match(data.error, /already verified on your account/);
+  });
+
+  test('should reject an address already linked to another account', async () => {
+    const db = mockUserEmailsDB({ existingForThisUser: null, takenByOther: { id: 999 }, count: 0 });
+    const cookie = await sessionCookieFor({ sub: 1, username: 'alice', role: 'member' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/auth/verify-email/request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Cookie: cookie },
+        body: JSON.stringify({ email: 'taken@example.com' }),
+      }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 409);
+    const data = await res.json();
+    assert.match(data.error, /already linked to another account/);
+  });
+});
+
+describe('DELETE /api/auth/emails/:id', () => {
+  test('should 404 for an email row belonging to someone else', async () => {
+    const db = mockUserEmailsDB({ deleteOwnerRow: { user_id: 2 } });
+    const cookie = await sessionCookieFor({ sub: 1, username: 'alice', role: 'member' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/auth/emails/7', { method: 'DELETE', headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 404);
+  });
+
+  test("should delete the caller's own email row", async () => {
+    const db = mockUserEmailsDB({ deleteOwnerRow: { user_id: 1 } });
+    const cookie = await sessionCookieFor({ sub: 1, username: 'alice', role: 'member' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/auth/emails/7', { method: 'DELETE', headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 200);
+    const deleteCall = db.calls.find(c => c.op === 'run' && /DELETE FROM user_emails WHERE id = \?/.test(c.sql));
+    assert.ok(deleteCall);
+    assert.equal(deleteCall.bindings[0], '7');
+  });
+});
+
+describe('POST /api/auth/forgot-password (multi-email lookup)', () => {
+  test('should look up the account via the user_emails join, not users.email', async () => {
+    const db = {
+      prepare(sql) {
+        return {
+          bind: (...bindings) => ({
+            first: async () => {
+              if (/FROM user_emails ue JOIN users u ON u\.id = ue\.user_id\s+WHERE ue\.email = \?/.test(sql)) {
+                return { id: 1, password_reset_last_sent_at: null };
+              }
+              return null;
+            },
+            run: async () => ({ meta: { changes: 1 } }),
+          }),
+        };
+      },
+    };
+    const res = await worker.fetch(
+      new Request('https://example.com/api/auth/forgot-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: 'alice@example.com' }),
+      }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.ok, true);
   });
 });
 
@@ -4007,7 +4184,7 @@ describe('sendKanbanDueDateReminders (worker.js scheduled() cron)', () => {
     assert.equal(db.calls.length, 0);
   });
 
-  test('should email the assignee and mark due_reminder_sent_at for a card due within 24h', async () => {
+  test('should email every verified address and mark due_reminder_sent_at for a card due within 24h', async () => {
     const calls = [];
     const db = {
       prepare(sql) {
@@ -4015,8 +4192,11 @@ describe('sendKanbanDueDateReminders (worker.js scheduled() cron)', () => {
           bind: (...bindings) => ({
             all: async () => {
               calls.push({ sql, bindings, op: 'all' });
-              if (/SELECT k\.id, k\.title, k\.due_date, u\.email/.test(sql)) {
-                return { results: [{ id: 42, title: 'Finish report', due_date: 1700000000, email: 'joshuaacklen@gmail.com' }] };
+              if (/SELECT k\.id, k\.title, k\.due_date, k\.assigned_to/.test(sql)) {
+                return { results: [{ id: 42, title: 'Finish report', due_date: 1700000000, assigned_to: 7 }] };
+              }
+              if (/SELECT email FROM user_emails WHERE user_id = \? AND email IS NOT NULL/.test(sql)) {
+                return { results: [{ email: 'joshuaacklen@gmail.com' }, { email: 'also-verified@gmail.com' }] };
               }
               return { results: [] };
             },
@@ -4039,7 +4219,7 @@ describe('sendKanbanDueDateReminders (worker.js scheduled() cron)', () => {
 
     assert.equal(fetchCalls.length, 1);
     const body = JSON.parse(fetchCalls[0].opts.body);
-    assert.equal(body.to, 'joshuaacklen@gmail.com');
+    assert.deepEqual(body.to, ['joshuaacklen@gmail.com', 'also-verified@gmail.com']);
     assert.match(body.subject, /Finish report/);
 
     const updateCall = calls.find(c => c.op === 'run' && /UPDATE kanban_items SET due_reminder_sent_at/.test(c.sql));
@@ -4047,16 +4227,16 @@ describe('sendKanbanDueDateReminders (worker.js scheduled() cron)', () => {
     assert.equal(updateCall.bindings[1], 42);
   });
 
-  test('should skip a row with no verified email without crashing', async () => {
+  test('should skip a card whose assignee has no verified email without crashing', async () => {
     const db = {
       prepare(sql) {
         return {
           bind: (...bindings) => ({
             all: async () => {
-              if (/SELECT k\.id, k\.title, k\.due_date, u\.email/.test(sql)) {
-                return { results: [{ id: 42, title: 'No email', due_date: 1700000000, email: null }] };
+              if (/SELECT k\.id, k\.title, k\.due_date, k\.assigned_to/.test(sql)) {
+                return { results: [{ id: 42, title: 'No email', due_date: 1700000000, assigned_to: 7 }] };
               }
-              return { results: [] };
+              return { results: [] }; // no verified rows in user_emails for this assignee
             },
             run: async () => ({ meta: { changes: 0 } }),
           }),

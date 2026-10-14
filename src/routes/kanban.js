@@ -110,12 +110,16 @@ async function assigneeIsInstructorPlus(env, userId) {
 
 async function notifyAssignee(env, { assignedTo, title, id }) {
   if (!assignedTo || !env.RESEND_API_KEY) return;
-  const assignee = await env.DB.prepare('SELECT email, username FROM users WHERE id = ?').bind(assignedTo).first();
-  if (!assignee?.email) return;
+  // An account can have up to 3 linked emails (user_emails in schema.sql,
+  // see CLAUDE.md) — notify every verified one, not just a "primary", so
+  // there's nothing extra to pick/manage here.
+  const { results } = await env.DB.prepare('SELECT email FROM user_emails WHERE user_id = ? AND email IS NOT NULL').bind(assignedTo).all();
+  const recipients = (results ?? []).map(r => r.email);
+  if (recipients.length === 0) return;
   try {
     await sendResendEmail(env, {
       from: KANBAN_FROM,
-      to: assignee.email,
+      to: recipients,
       subject: `You were assigned a Kanban card — ${title}`,
       text: `You were assigned to "${title}" on the Cyber Unit Kanban board.\n\nView it: ${env.SITE_ORIGIN ?? 'https://ungcyberunit.org'}/kanban`,
       html: `<p>You were assigned to <strong>${title}</strong> on the Cyber Unit Kanban board.</p><p><a href="${env.SITE_ORIGIN ?? 'https://ungcyberunit.org'}/kanban">View the board</a></p>`,
@@ -137,22 +141,26 @@ export async function sendKanbanDueDateReminders(env) {
   if (!env.DB || !env.RESEND_API_KEY) return;
   const cutoff = Math.floor(Date.now() / 1000) + 24 * 60 * 60;
   const { results } = await env.DB.prepare(`
-    SELECT k.id, k.title, k.due_date, u.email
+    SELECT k.id, k.title, k.due_date, k.assigned_to
     FROM kanban_items k
-    JOIN users u ON u.id = k.assigned_to
     WHERE k.due_date IS NOT NULL
       AND k.due_reminder_sent_at IS NULL
       AND k.status != 'archived'
+      AND k.assigned_to IS NOT NULL
       AND k.due_date <= ?
   `).bind(cutoff).all();
 
   for (const row of results) {
-    if (!row.email) continue;
+    // Up to 3 linked emails per account (see notifyAssignee() above) —
+    // notify every verified one.
+    const { results: emailRows } = await env.DB.prepare('SELECT email FROM user_emails WHERE user_id = ? AND email IS NOT NULL').bind(row.assigned_to).all();
+    const recipients = (emailRows ?? []).map(r => r.email);
+    if (recipients.length === 0) continue;
     const dueStr = new Date(row.due_date * 1000).toLocaleDateString('en-US', { timeZone: 'UTC', month: 'long', day: 'numeric', year: 'numeric' });
     try {
       await sendResendEmail(env, {
         from: KANBAN_FROM,
-        to: row.email,
+        to: recipients,
         subject: `Kanban card due soon — ${row.title}`,
         text: `"${row.title}" is due ${dueStr} on the Cyber Unit Kanban board.\n\nView it: ${env.SITE_ORIGIN ?? 'https://ungcyberunit.org'}/kanban`,
         html: `<p><strong>${row.title}</strong> is due ${dueStr} on the Cyber Unit Kanban board.</p><p><a href="${env.SITE_ORIGIN ?? 'https://ungcyberunit.org'}/kanban">View the board</a></p>`,

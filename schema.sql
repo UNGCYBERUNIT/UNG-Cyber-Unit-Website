@@ -9,11 +9,6 @@ CREATE TABLE IF NOT EXISTS users (
   created_at    INTEGER NOT NULL,
   is_public     INTEGER NOT NULL DEFAULT 0,
   last_seen_announcements INTEGER,
-  email                     TEXT,
-  email_pending             TEXT,
-  email_verify_token_hash   TEXT,
-  email_verify_expires_at   INTEGER,
-  email_verify_last_sent_at INTEGER,
   is_ung_student            INTEGER NOT NULL DEFAULT 0,
   password_reset_token_hash   TEXT,
   password_reset_expires_at   INTEGER,
@@ -30,10 +25,28 @@ CREATE TABLE IF NOT EXISTS users (
   token_version      INTEGER NOT NULL DEFAULT 0
 );
 
--- Verified email must uniquely identify one account (not currently tied to
--- any role — see CLAUDE.md; is_ung_student above is dormant, reserved for a
--- future feature, not referenced by any code).
-CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email) WHERE email IS NOT NULL;
+-- Up to 3 email addresses per account (app-enforced cap, not a DB
+-- constraint — see CLAUDE.md), each independently addable/removable, not
+-- tied to any role (is_ung_student above is dormant, reserved for a future
+-- feature, not referenced by any code). One row per address: `email` is
+-- set once verified, NULL while `pending_email` awaits confirmation.
+-- password_reset_* stays on `users` below, not here — a reset is keyed by
+-- whichever address the requester types in (looked up via JOIN), not "the
+-- account's email," so there's nothing per-address to store for it.
+CREATE TABLE IF NOT EXISTS user_emails (
+  id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id             INTEGER NOT NULL,
+  email               TEXT,
+  pending_email       TEXT,
+  verify_token_hash   TEXT,
+  verify_expires_at   INTEGER,
+  verify_last_sent_at INTEGER,
+  created_at          INTEGER NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_user_emails_email ON user_emails(email) WHERE email IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_user_emails_user_id ON user_emails(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_emails_verify_token_hash ON user_emails(verify_token_hash) WHERE verify_token_hash IS NOT NULL;
 
 -- A Discord account can only ever be linked to one website account (see
 -- docs/plan-discord-pairing.md). Same partial-unique-index shape as email.

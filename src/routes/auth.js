@@ -23,6 +23,12 @@ import { sendResendEmail } from '../lib/email.js';
 import { dateStrUTC, nextStreak } from '../lib/util.js';
 import { topics } from '../data/topics.js';
 
+// Cap on how many email addresses one account can have linked at once
+// (user_emails in schema.sql) — a small fixed number, enforced here rather
+// than in the DB, same app-level-cap pattern as the Kanban CSV import's
+// row limit.
+const MAX_EMAILS_PER_USER = 3;
+
 // Auth & Progress API — register/login/logout/sign-out-everywhere/guest/
 // upgrade/me/verify-email/forgot-password/reset-password/forgot-username,
 // plus per-topic quiz progress. See CLAUDE.md's auth-related sections.
@@ -195,10 +201,12 @@ export async function handleAuthRoutes(request, env, url, path, secureCookie) {
   }
 
   // POST /api/auth/verify-email/request — any signed-in non-guest member
-  // can confirm any email address on their account. Confirming does NOT
-  // grant any role by itself — 'student' (and any future role) is
-  // admin-assigned only (PATCH /api/admin/users/:id). This is purely an
-  // identity/recovery marker, also used by forgot-password/-username below.
+  // can link up to MAX_EMAILS_PER_USER addresses on their account (see
+  // user_emails in schema.sql). Confirming does NOT grant any role by
+  // itself — 'student' (and any future role) is admin-assigned only
+  // (PATCH /api/admin/users/:id). This is purely an identity/recovery
+  // marker, also used by forgot-password/-username below, which look up
+  // by whichever address the requester types in, not "the" account email.
   if (path === '/api/auth/verify-email/request' && request.method === 'POST') {
     if (!env.DB) return jsonResponse({ error: 'Server not configured' }, 503);
     const session = await requireRole(request, env, 'member');
@@ -211,27 +219,45 @@ export async function handleAuthRoutes(request, env, url, path, secureCookie) {
       return jsonResponse({ error: 'Please enter a valid email address' }, 400);
     }
 
-    const user = await env.DB.prepare(
-      'SELECT email, email_verify_last_sent_at FROM users WHERE id = ?'
-    ).bind(session.sub).first();
-    if (user?.email) return jsonResponse({ error: 'This account already has a verified email' }, 409);
+    const existingForThisUser = await env.DB.prepare(
+      'SELECT id, email, verify_last_sent_at FROM user_emails WHERE user_id = ? AND (email = ? OR pending_email = ?)'
+    ).bind(session.sub, email, email).first();
+    if (existingForThisUser?.email) return jsonResponse({ error: 'This email is already verified on your account' }, 409);
 
-    const takenByOther = await env.DB.prepare('SELECT id FROM users WHERE email = ? AND id != ?').bind(email, session.sub).first();
-    if (takenByOther) return jsonResponse({ error: 'This email is already verified on another account' }, 409);
+    const takenByOther = await env.DB.prepare(
+      'SELECT id FROM user_emails WHERE (email = ? OR pending_email = ?) AND user_id != ?'
+    ).bind(email, email, session.sub).first();
+    if (takenByOther) return jsonResponse({ error: 'This email is already linked to another account' }, 409);
 
     const cooldownMs = 2 * 60 * 1000;
-    if (user?.email_verify_last_sent_at && Date.now() - user.email_verify_last_sent_at < cooldownMs) {
+    if (existingForThisUser?.verify_last_sent_at && Date.now() - existingForThisUser.verify_last_sent_at < cooldownMs) {
       return jsonResponse({ error: 'Please wait a couple minutes before requesting another email' }, 429);
+    }
+
+    // Re-requesting the same still-pending address (e.g. the "Resend"
+    // button) reuses its existing slot rather than counting a new one —
+    // only a genuinely new address consumes one of the 3.
+    if (!existingForThisUser) {
+      const { count } = await env.DB.prepare('SELECT COUNT(*) AS count FROM user_emails WHERE user_id = ?').bind(session.sub).first();
+      if (count >= MAX_EMAILS_PER_USER) {
+        return jsonResponse({ error: `You can link at most ${MAX_EMAILS_PER_USER} email addresses` }, 409);
+      }
     }
 
     const token = randomTokenHex();
     const tokenHash = await sha256Hex(token);
     const now = Date.now();
-    await env.DB.prepare(`
-      UPDATE users
-      SET email_pending = ?, email_verify_token_hash = ?, email_verify_expires_at = ?, email_verify_last_sent_at = ?
-      WHERE id = ?
-    `).bind(email, tokenHash, now + 60 * 60 * 1000, now, session.sub).run();
+    if (existingForThisUser) {
+      await env.DB.prepare(`
+        UPDATE user_emails SET verify_token_hash = ?, verify_expires_at = ?, verify_last_sent_at = ?
+        WHERE id = ?
+      `).bind(tokenHash, now + 60 * 60 * 1000, now, existingForThisUser.id).run();
+    } else {
+      await env.DB.prepare(`
+        INSERT INTO user_emails (user_id, pending_email, verify_token_hash, verify_expires_at, verify_last_sent_at, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).bind(session.sub, email, tokenHash, now + 60 * 60 * 1000, now, now).run();
+    }
 
     if (env.RESEND_API_KEY) {
       const confirmUrl = `${url.origin}/api/auth/verify-email/confirm?token=${token}`;
@@ -275,7 +301,7 @@ export async function handleAuthRoutes(request, env, url, path, secureCookie) {
     const token = url.searchParams.get('token') ?? '';
     const tokenHash = token ? await sha256Hex(token) : '';
     const match = tokenHash && await env.DB.prepare(
-      'SELECT id, email_pending FROM users WHERE email_verify_token_hash = ? AND email_verify_expires_at > ?'
+      'SELECT id, pending_email AS email_pending FROM user_emails WHERE verify_token_hash = ? AND verify_expires_at > ?'
     ).bind(tokenHash, Date.now()).first();
 
     if (!match) return Response.redirect(`${url.origin}/profile?verify_error=1`, 302);
@@ -301,18 +327,42 @@ export async function handleAuthRoutes(request, env, url, path, secureCookie) {
     const token = (form.get('token') ?? '').toString();
     const tokenHash = token ? await sha256Hex(token) : '';
     const match = tokenHash && await env.DB.prepare(
-      'SELECT id FROM users WHERE email_verify_token_hash = ? AND email_verify_expires_at > ?'
+      'SELECT id FROM user_emails WHERE verify_token_hash = ? AND verify_expires_at > ?'
     ).bind(tokenHash, Date.now()).first();
 
     if (!match) return Response.redirect(`${url.origin}/profile?verify_error=1`, 302);
 
-    await env.DB.prepare(`
-      UPDATE users
-      SET email = email_pending, email_pending = NULL, email_verify_token_hash = NULL, email_verify_expires_at = NULL
-      WHERE id = ?
-    `).bind(match.id).run();
+    try {
+      await env.DB.prepare(`
+        UPDATE user_emails SET email = pending_email, pending_email = NULL, verify_token_hash = NULL, verify_expires_at = NULL
+        WHERE id = ?
+      `).bind(match.id).run();
+    } catch (err) {
+      // idx_user_emails_email unique-constraint race: someone else
+      // verified the exact same address a moment earlier.
+      console.error('verify-email confirm failed', err.message);
+      return Response.redirect(`${url.origin}/profile?verify_error=1`, 302);
+    }
 
     return Response.redirect(`${url.origin}/profile?verified=1`, 302);
+  }
+
+  // DELETE /api/auth/emails/:id — unlink one of the signed-in user's own
+  // email addresses (verified or still-pending). No re-auth prompt, same
+  // as every other self-service profile mutation here (avatar, visibility,
+  // Discord unlink). "Replace an address" is this plus a fresh
+  // verify-email/request from the client — no separate replace endpoint.
+  const emailIdMatch = path.match(/^\/api\/auth\/emails\/(\d+)$/);
+  if (emailIdMatch && request.method === 'DELETE') {
+    if (!env.DB) return jsonResponse({ error: 'Server not configured' }, 503);
+    const session = await requireRole(request, env, 'member');
+    if (session instanceof Response) return session;
+
+    const existing = await env.DB.prepare('SELECT user_id FROM user_emails WHERE id = ?').bind(emailIdMatch[1]).first();
+    if (!existing || existing.user_id !== session.sub) return jsonResponse({ error: 'Email not found' }, 404);
+
+    await env.DB.prepare('DELETE FROM user_emails WHERE id = ?').bind(emailIdMatch[1]).run();
+    return jsonResponse({ ok: true });
   }
 
   // POST /api/auth/forgot-password — unauthenticated (that's the whole
@@ -333,9 +383,11 @@ export async function handleAuthRoutes(request, env, url, path, secureCookie) {
       return jsonResponse({ error: 'Please enter a valid email address' }, 400);
     }
 
-    const user = await env.DB.prepare(
-      'SELECT id, password_reset_last_sent_at FROM users WHERE email = ?'
-    ).bind(email).first();
+    const user = await env.DB.prepare(`
+      SELECT u.id, u.password_reset_last_sent_at
+      FROM user_emails ue JOIN users u ON u.id = ue.user_id
+      WHERE ue.email = ?
+    `).bind(email).first();
     const cooldownMs = 2 * 60 * 1000;
     const inCooldown = user?.password_reset_last_sent_at && Date.now() - user.password_reset_last_sent_at < cooldownMs;
 
@@ -490,7 +542,11 @@ export async function handleAuthRoutes(request, env, url, path, secureCookie) {
       return jsonResponse({ error: 'Please enter a valid email address' }, 400);
     }
 
-    const user = await env.DB.prepare('SELECT username FROM users WHERE email = ?').bind(email).first();
+    const user = await env.DB.prepare(`
+      SELECT u.username
+      FROM user_emails ue JOIN users u ON u.id = ue.user_id
+      WHERE ue.email = ?
+    `).bind(email).first();
     if (user && env.RESEND_API_KEY) {
       try {
         await sendResendEmail(env, {

@@ -3822,6 +3822,12 @@ async function loadProfileAccount() {
 
 // ─── Email Verification ─────────────────────────────────────────────────────
 
+// Up to MAX_LINKED_EMAILS slots per account (see MAX_EMAILS_PER_USER in
+// src/routes/auth.js — keep these in sync), each independently
+// verified/pending/removable. profile.emails is an array of
+// {id, email, pendingEmail}, ordered oldest-first.
+const MAX_LINKED_EMAILS = 3;
+
 function renderEmailVerification(profile) {
   const wrap = document.getElementById('emailVerifyWrap');
   if (!wrap) return;
@@ -3846,54 +3852,51 @@ function renderEmailVerification(profile) {
     }
   }
 
-  if (profile.email) {
-    wrap.innerHTML = `
-      <p>✓ <strong>Email verified</strong></p>
-      <p style="color:var(--text-muted);font-family:'Share Tech Mono',monospace;font-size:0.85rem;">${escHtml(profile.email)}</p>`;
-    return;
-  }
+  const emails = profile.emails ?? [];
+  const rowsHtml = emails.map(e => e.email
+    ? `<div class="linked-email-row">
+         <span>✓ <strong>${escHtml(e.email)}</strong></span>
+         <button type="button" class="btn btn-sm btn-danger" data-remove-id="${e.id}">Remove</button>
+       </div>`
+    : `<div class="linked-email-row">
+         <span>Verification sent to <strong>${escHtml(e.pendingEmail)}</strong> — check your inbox</span>
+         <div class="linked-email-row-actions">
+           <button type="button" class="btn btn-sm" data-resend-email="${escHtml(e.pendingEmail)}">Resend</button>
+           <button type="button" class="btn btn-sm btn-danger" data-remove-id="${e.id}">Remove</button>
+         </div>
+       </div>`
+  ).join('');
 
-  if (profile.emailPending) {
-    wrap.innerHTML = `
-      <p>Verification email sent to <strong>${escHtml(profile.emailPending)}</strong> — check your inbox.</p>
-      <p class="form-error" id="emailVerifyError" hidden></p>
-      <div class="announcement-form-actions">
-        <button type="button" class="btn btn-sm" id="emailVerifyResendBtn">Resend</button>
-        <button type="button" class="link-btn" id="emailVerifyChangeBtn">Use a different email</button>
-      </div>`;
-    document.getElementById('emailVerifyResendBtn')?.addEventListener('click', () => submitEmailVerify(profile.emailPending));
-    // Wrong address, typo, whatever — let them enter a new one. The request
-    // endpoint already overwrites email_pending on each call (still subject
-    // to the same per-account cooldown), so this just needs to show the
-    // input again rather than being stuck on the address already sent to.
-    document.getElementById('emailVerifyChangeBtn')?.addEventListener('click', () => renderEmailVerifyForm(wrap));
-    return;
-  }
+  const formOrLimitHtml = emails.length < MAX_LINKED_EMAILS
+    ? `<form id="emailVerifyForm" class="announcement-form">
+         <p class="form-error" id="emailVerifyError" hidden></p>
+         <div class="form-group">
+           <label for="emailVerifyEmail">${emails.length ? 'Add another email' : 'Your email'}</label>
+           <input type="email" id="emailVerifyEmail" placeholder="you@example.com" required>
+         </div>
+         <div class="announcement-form-actions">
+           <button type="submit" class="btn btn-primary" id="emailVerifySubmit">Send Verification Email</button>
+         </div>
+       </form>`
+    : `<p style="color:var(--text-muted);font-family:'Share Tech Mono',monospace;font-size:0.85rem;">You've linked the maximum of ${MAX_LINKED_EMAILS} email addresses. Remove one to add another.</p>
+       <p class="form-error" id="emailVerifyError" hidden></p>`;
 
-  renderEmailVerifyForm(wrap);
-}
+  wrap.innerHTML = rowsHtml + formOrLimitHtml;
 
-function renderEmailVerifyForm(wrap) {
-  wrap.innerHTML = `
-    <form id="emailVerifyForm" class="announcement-form">
-      <p class="form-error" id="emailVerifyError" hidden></p>
-      <div class="form-group">
-        <label for="emailVerifyEmail">Your email</label>
-        <input type="email" id="emailVerifyEmail" placeholder="you@example.com" required>
-      </div>
-      <div class="announcement-form-actions">
-        <button type="submit" class="btn btn-primary" id="emailVerifySubmit">Send Verification Email</button>
-      </div>
-    </form>`;
   document.getElementById('emailVerifyForm')?.addEventListener('submit', (e) => {
     e.preventDefault();
-    submitEmailVerify(document.getElementById('emailVerifyEmail').value.trim());
+    submitEmailVerify(document.getElementById('emailVerifyEmail').value.trim(), document.getElementById('emailVerifySubmit'));
+  });
+  wrap.querySelectorAll('[data-resend-email]').forEach(btn => {
+    btn.addEventListener('click', () => submitEmailVerify(btn.dataset.resendEmail, btn));
+  });
+  wrap.querySelectorAll('[data-remove-id]').forEach(btn => {
+    btn.addEventListener('click', () => removeLinkedEmail(btn.dataset.removeId, btn));
   });
 }
 
-async function submitEmailVerify(email) {
+async function submitEmailVerify(email, btn) {
   const errEl = document.getElementById('emailVerifyError');
-  const btn = document.getElementById('emailVerifySubmit') || document.getElementById('emailVerifyResendBtn');
   if (errEl) errEl.hidden = true;
   if (btn) btn.disabled = true;
   try {
@@ -3910,6 +3913,25 @@ async function submitEmailVerify(email) {
     await loadProfileAccount();
   } catch {
     if (errEl) { errEl.textContent = 'Failed to send verification email.'; errEl.hidden = false; }
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function removeLinkedEmail(id, btn) {
+  const errEl = document.getElementById('emailVerifyError');
+  if (errEl) errEl.hidden = true;
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch(`/api/auth/emails/${id}`, { method: 'DELETE' });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      if (errEl) { errEl.textContent = data.error || 'Failed to remove email.'; errEl.hidden = false; }
+      return;
+    }
+    await loadProfileAccount();
+  } catch {
+    if (errEl) { errEl.textContent = 'Failed to remove email.'; errEl.hidden = false; }
   } finally {
     if (btn) btn.disabled = false;
   }
