@@ -2569,7 +2569,10 @@ footer {
 
 .kanban-calendar-grid {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  /* minmax(0, 1fr), not bare 1fr — bare 1fr expands to minmax(auto, 1fr),
+     so a column's minimum width is driven by its own content's min-content
+     size (e.g. a long nowrap card title), making columns uneven widths. */
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   grid-auto-rows: 118px; /* fixed, so every week's row is the same height regardless of how many items any one day has */
   gap: 0.4rem;
 }
