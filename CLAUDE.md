@@ -313,10 +313,9 @@ heavily (university O365/Defender tenants especially), independent of SPF/DKIM p
 was confirmed with a live UNG O365/Proofpoint inbox: a `kanban@` send arrived clean
 (`spamscore=0`, Microsoft `SCL:1`) and was actually seen, while `noreply@` verify-email sends
 to the same inbox around the same time were never found, in Junk or otherwise. `verify-email/
-request` sends from `email-verification@ungcyberunit.org` for the same reason;
-`forgot-password`/`forgot-username` still use the shared `noreply@` default as of this writing
-— revisit if they turn out to have the same problem. `forgot-password` still stores the token
-either way, just doesn't email the link.
+request` sends from `email-verification@ungcyberunit.org` and `forgot-password`/
+`forgot-username` both send from `account-recovery@ungcyberunit.org`, for the same reason.
+`forgot-password` still stores the token either way, just doesn't email the link.
 
 **Private files that must never touch the repo (this GitHub repo is public):** any
 instructor-only asset (e.g. a challenge answer key) must NOT go in `public/` — a static asset

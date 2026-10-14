@@ -346,6 +346,9 @@ export async function handleAuthRoutes(request, env, url, path, secureCookie) {
         const resetUrl = `${url.origin}/api/auth/reset-password?token=${token}`;
         try {
           await sendResendEmail(env, {
+            // See the comment on verify-email/request's send above — same
+            // noreply@ spam-score reasoning, same fix.
+            from: 'CyberUnit @ UNG <account-recovery@ungcyberunit.org>',
             to: email,
             subject: 'Reset your password — CyberUnit @ UNG',
             text: `Reset your password by opening this link (expires in 1 hour):\n\n${resetUrl}\n\nIf you didn't request this, you can ignore this email.`,
@@ -484,6 +487,8 @@ export async function handleAuthRoutes(request, env, url, path, secureCookie) {
     if (user && env.RESEND_API_KEY) {
       try {
         await sendResendEmail(env, {
+          // Same noreply@ spam-score reasoning as verify-email/request above.
+          from: 'CyberUnit @ UNG <account-recovery@ungcyberunit.org>',
           to: email,
           subject: 'Your username — CyberUnit @ UNG',
           text: `Your username is: ${user.username}\n\nIf you didn't request this, you can ignore this email.`,
