@@ -305,6 +305,11 @@ paid product; Resend's free tier covers this app's volume. Needs the `RESEND_API
 set (`wrangler secret put RESEND_API_KEY`) and `ungcyberunit.org` verified with Resend, or
 the send is silently skipped (the `if (env.RESEND_API_KEY)` guard) so local dev without the
 secret still works — `verify-email/request` and `forgot-username` degrade to a no-op send;
+`sendResendEmail()`'s `from` defaults to `noreply@ungcyberunit.org` but can be overridden per
+call (no DNS changes needed — it's the same verified domain, just a different local part); the
+Kanban notifications (`KANBAN_FROM` in `src/routes/kanban.js`) use `kanban@ungcyberunit.org`
+instead, since a `noreply@` local part is itself a spam-score signal some mail gateways weight
+heavily (university O365/Defender tenants especially), independent of SPF/DKIM passing.
 `forgot-password` still stores the token either way, just doesn't email the link.
 
 **Private files that must never touch the repo (this GitHub repo is public):** any

@@ -16,6 +16,12 @@ const ITEM_TYPES = ['task', 'story', 'subtask', 'epic'];
 const MAX_IMPORT_FILE_BYTES = 1_000_000; // same cap as the Quiz Room question-file upload
 const MAX_IMPORT_ROWS = 500;
 
+// Kanban's two notification emails (assignment + due-date reminder) send
+// from kanban@ rather than the shared noreply@ address — a "noreply@"
+// local part is a spam-score signal some mail gateways weight on its own,
+// independent of SPF/DKIM (see sendResendEmail() in src/lib/email.js).
+const KANBAN_FROM = 'Cyber Unit Kanban <kanban@ungcyberunit.org>';
+
 function validateItemFields(body) {
   const title = (body?.title ?? '').toString().trim();
   const description = (body?.description ?? '').toString().trim();
@@ -108,6 +114,7 @@ async function notifyAssignee(env, { assignedTo, title, id }) {
   if (!assignee?.email) return;
   try {
     await sendResendEmail(env, {
+      from: KANBAN_FROM,
       to: assignee.email,
       subject: `You were assigned a Kanban card — ${title}`,
       text: `You were assigned to "${title}" on the Cyber Unit Kanban board.\n\nView it: ${env.SITE_ORIGIN ?? 'https://ungcyberunit.org'}/kanban`,
@@ -144,6 +151,7 @@ export async function sendKanbanDueDateReminders(env) {
     const dueStr = new Date(row.due_date * 1000).toLocaleDateString('en-US', { timeZone: 'UTC', month: 'long', day: 'numeric', year: 'numeric' });
     try {
       await sendResendEmail(env, {
+        from: KANBAN_FROM,
         to: row.email,
         subject: `Kanban card due soon — ${row.title}`,
         text: `"${row.title}" is due ${dueStr} on the Cyber Unit Kanban board.\n\nView it: ${env.SITE_ORIGIN ?? 'https://ungcyberunit.org'}/kanban`,
