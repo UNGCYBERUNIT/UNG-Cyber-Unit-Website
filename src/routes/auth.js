@@ -237,6 +237,13 @@ export async function handleAuthRoutes(request, env, url, path, secureCookie) {
       const confirmUrl = `${url.origin}/api/auth/verify-email/confirm?token=${token}`;
       try {
         await sendResendEmail(env, {
+          // Not the shared noreply@ default — see KANBAN_FROM's comment in
+          // src/routes/kanban.js for why ("noreply@" is itself a spam-score
+          // signal at some mail gateways). Confirmed via a live UNG O365/
+          // Proofpoint test: a kanban@ send arrived clean (spamscore=0,
+          // SCL:1) while noreply@ verify-email sends to the same inbox were
+          // never found, in junk or otherwise.
+          from: 'CyberUnit @ UNG <email-verification@ungcyberunit.org>',
           to: email,
           subject: 'Confirm your email — CyberUnit @ UNG',
           text: `Confirm this email address by opening this link (expires in 1 hour):\n\n${confirmUrl}\n\nIf you didn't request this, you can ignore this email.`,
