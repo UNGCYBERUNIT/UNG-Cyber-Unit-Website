@@ -115,6 +115,34 @@ export async function recordWebexploitLoginAttempt(env, request) {
   await env.WEBEXPLOIT_DB.prepare('DELETE FROM webexploit_login_rate_limit WHERE ts < ?').bind(now - WEBEXPLOIT_LOGIN_RL_WINDOW_MS).run();
 }
 
+export const LOGIN_RL_WINDOW_MS = 10 * 60 * 1000; // 10 minutes
+export const LOGIN_RL_MAX_FAILURES = 10;          // failed login attempts per IP per window
+
+// Throttle brute-force/credential-stuffing against POST /api/auth/login. We
+// count only *failed* attempts per client IP in a sliding window (mirrors
+// checkRoomLookupLimit), so a user who simply mistypes their own password
+// isn't blocked, and legitimate logins are never throttled.
+export async function checkLoginLimit(env, request) {
+  if (!env.DB) return null;
+  const cutoff = Date.now() - LOGIN_RL_WINDOW_MS;
+  const row = await env.DB.prepare(
+    'SELECT COUNT(*) AS n FROM login_failures WHERE ip = ? AND ts > ?'
+  ).bind(clientIP(request), cutoff).first();
+  if ((row?.n ?? 0) >= LOGIN_RL_MAX_FAILURES) {
+    return jsonResponse({ error: 'Too many login attempts. Please wait a few minutes and try again.' }, 429);
+  }
+  return null;
+}
+
+export async function recordLoginFailure(env, request) {
+  if (!env.DB) return;
+  const now = Date.now();
+  await env.DB.prepare('INSERT INTO login_failures (ip, ts) VALUES (?, ?)')
+    .bind(clientIP(request), now).run();
+  // Opportunistically prune expired rows so the table stays small.
+  await env.DB.prepare('DELETE FROM login_failures WHERE ts < ?').bind(now - LOGIN_RL_WINDOW_MS).run();
+}
+
 export const SIGNUP_RL_WINDOW_MS = 60 * 60 * 1000; // 1 hour
 export const SIGNUP_RL_MAX = 10;                   // account creations (register + guest) per IP per window
 

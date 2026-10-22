@@ -218,6 +218,16 @@ CREATE TABLE IF NOT EXISTS signup_rate_limit (
   ts INTEGER NOT NULL
 );
 
+-- Sliding-window rate limit for POST /api/auth/login: counts only *failed*
+-- attempts per IP (same shape/approach as room_lookup_failures), so normal
+-- logins are never throttled — only brute-force/credential-stuffing is.
+CREATE TABLE IF NOT EXISTS login_failures (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ip TEXT    NOT NULL,
+  ts INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_lf_ip_ts ON login_failures (ip, ts);
+
 -- Instructor-only answer keys for downloadable challenge sets (see
 -- /log-analysis-challenge). Stored as a D1 blob rather than a public/ static
 -- asset specifically so the file never enters the (public) git repo/GitHub

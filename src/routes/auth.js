@@ -18,6 +18,8 @@ import {
   recordSignup,
   checkEmailActionLimit,
   recordEmailAction,
+  checkLoginLimit,
+  recordLoginFailure,
 } from '../lib/ratelimit.js';
 import { sendResendEmail } from '../lib/email.js';
 import { dateStrUTC, nextStreak } from '../lib/util.js';
@@ -69,6 +71,8 @@ export async function handleAuthRoutes(request, env, url, path, secureCookie) {
   // POST /api/auth/login
   if (path === '/api/auth/login' && request.method === 'POST') {
     if (!env.DB) return jsonResponse({ error: 'Database not configured' }, 503);
+    const limited = await checkLoginLimit(env, request);
+    if (limited) return limited;
     let body;
     try { body = await request.json(); } catch { return jsonResponse({ error: 'Invalid request body' }, 400); }
     const { username, password } = body ?? {};
@@ -79,7 +83,10 @@ export async function handleAuthRoutes(request, env, url, path, secureCookie) {
     ).bind(username).first();
     const valid = user && await verifyPassword(String(password), user.password_hash);
     // Always return the same error to prevent username enumeration
-    if (!valid) return jsonResponse({ error: 'Invalid username or password' }, 401);
+    if (!valid) {
+      await recordLoginFailure(env, request);
+      return jsonResponse({ error: 'Invalid username or password' }, 401);
+    }
 
     const role = user.role ?? 'member';
     const token = await signJWT(
