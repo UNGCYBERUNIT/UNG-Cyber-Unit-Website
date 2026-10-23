@@ -297,7 +297,7 @@ npm test
 ```
 
 Runs on Node's built-in test runner (`node --test`, no dependencies) against
-`test/worker.test.mjs` — currently 85 suites / 315 tests. Coverage falls
+`test/worker.test.mjs` — currently 100 suites / 385 tests. Coverage falls
 into four groups:
 
 - **Pure helpers** — `parseCookies`, `hashPassword`/`verifyPassword`, JWT

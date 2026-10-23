@@ -205,7 +205,12 @@ independent channels** — email (reuses `sendResendEmail()` exactly like `verif
 `src/lib/discord.js`, via `notifyAssigneeOnDiscord()` in `src/routes/kanban.js` — a direct call
 to Discord's Bot REST API using the `DISCORD_TOKEN` secret, the same bot token
 `cyber_discord_bot` already uses for its gateway connection, so the message really does appear
-as sent by the bot rather than a separate webhook integration). The two channels are gated and
+as sent by the bot rather than a separate webhook integration — see `wrangler.toml`'s
+`DISCORD_NOTIFICATIONS_CHANNEL_ID` comment for exactly which of the three similarly-named
+Discord-adjacent secrets (`DISCORD_TOKEN`, `DISCORD_CLIENT_SECRET`, `BOT_API_SECRET`) is which;
+mixed up live once setting this up, confirmed by the symptom: Discord's API replying `401
+Unauthorized` (a bad credential, not a missing-permission 403) to a syntactically-fine request.
+The two channels are gated and
 attempted independently — a deployment with only one configured (or neither) still works, same
 as today. The Discord post `@`-mentions the assignee's linked `users.discord_id` when one's on
 file (`<@discord_id>`, scoped via Discord's `allowed_mentions.users` so an `@everyone`/role

@@ -48,6 +48,22 @@ DISCORD_CLIENT_ID = "1547010558862037124"
 # (`wrangler secret put DISCORD_TOKEN`, the bot's own token — same one
 # cyber_discord_bot uses for its gateway connection). The bot's Discord
 # application needs "Send Messages" permission in this channel.
+#
+# DISCORD_TOKEN is NOT the same value as any other secret already in this
+# app, despite similar names — mixed up live once when first setting this
+# up, worth being explicit:
+#   - DISCORD_TOKEN           = Discord Developer Portal -> your app ->
+#     "Bot" tab -> Token (click "Reset Token" if not already visible;
+#     Discord only shows it once per reset). This is what goes here.
+#   - DISCORD_CLIENT_SECRET   = Developer Portal -> "OAuth2" tab -> Client
+#     Secret. Already a separate secret on this Worker — only used by
+#     /api/discord/callback's account-linking code exchange, never by
+#     sendDiscordMessage().
+#   - BOT_API_SECRET          = this app's OWN secret (unrelated to any
+#     Discord-issued credential) — what cyber_discord_bot sends back to
+#     THIS Worker as X-Bot-Secret when polling /api/bot/progress/:discordId
+#     etc. Pasting this into DISCORD_TOKEN fails with a 401 from Discord's
+#     API (wrong credential, not a permissions issue).
 DISCORD_NOTIFICATIONS_CHANNEL_ID = "1563315905725997056"
 
 # .edu student-verification emails (see /api/auth/verify-email/request in
