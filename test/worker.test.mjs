@@ -30,6 +30,7 @@ import worker, {
   jsonResponse,
   dateStrUTC,
   nextStreak,
+  summarizeUserAgent,
   topics,
   topicsWithCheatSheet,
   pathwayStages,
@@ -842,6 +843,52 @@ describe('nextStreak', () => {
   test('should treat a same-day user with 0 streak as 1', () => {
     // Boundary: guards against showing a 0-day "streak".
     assert.equal(nextStreak(0, today, today, yesterday), 1);
+  });
+});
+
+describe('summarizeUserAgent', () => {
+  // Real UA strings (trimmed to the parts that matter). Every Chromium-
+  // based browser includes "Chrome/" for site-compatibility, so each has
+  // to be checked for its OWN token first or it misreports as plain
+  // Chrome — caught in the wild for Vivaldi before this test existed.
+  const CHROME_WINDOWS = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36';
+  const FIREFOX_LINUX = 'Mozilla/5.0 (X11; Linux x86_64; rv:130.0) Gecko/20100101 Firefox/130.0';
+  const SAFARI_MAC = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15';
+  const EDGE_WINDOWS = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 Edg/129.0.0.0';
+  const OPERA_WINDOWS = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 OPR/115.0.0.0';
+  const VIVALDI_LINUX = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 Vivaldi/7.0.3495.11';
+  const SAMSUNG_ANDROID = 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/26.0 Chrome/122.0.0.0 Mobile Safari/537.36';
+  const YANDEX_WINDOWS = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 YaBrowser/24.10.0.0 Safari/537.36';
+  const CHROME_IOS = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/129.0.0.0 Mobile/15E148 Safari/604.1';
+  const SAFARI_IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1';
+  const CHROME_ANDROID = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Mobile Safari/537.36';
+
+  test('should report an unknown device for an empty/missing User-Agent', () => {
+    assert.equal(summarizeUserAgent(null), 'an unknown device');
+    assert.equal(summarizeUserAgent(''), 'an unknown device');
+  });
+
+  test('should identify plain Chrome/Firefox/Safari on desktop OSes', () => {
+    assert.equal(summarizeUserAgent(CHROME_WINDOWS), 'Chrome on Windows');
+    assert.equal(summarizeUserAgent(FIREFOX_LINUX), 'Firefox on Linux');
+    assert.equal(summarizeUserAgent(SAFARI_MAC), 'Safari on macOS');
+  });
+
+  test('should identify Chromium-based browsers by their own token, not as plain Chrome', () => {
+    // Regression coverage for the real Vivaldi misreport ("Chrome on
+    // Linux") — every one of these UAs also matches /Chrome\//, so each
+    // one's own check must come first in summarizeUserAgent().
+    assert.equal(summarizeUserAgent(EDGE_WINDOWS), 'Edge on Windows');
+    assert.equal(summarizeUserAgent(OPERA_WINDOWS), 'Opera on Windows');
+    assert.equal(summarizeUserAgent(VIVALDI_LINUX), 'Vivaldi on Linux');
+    assert.equal(summarizeUserAgent(SAMSUNG_ANDROID), 'Samsung Internet on Android');
+    assert.equal(summarizeUserAgent(YANDEX_WINDOWS), 'Yandex Browser on Windows');
+  });
+
+  test('should identify mobile browsers and iOS/Android correctly', () => {
+    assert.equal(summarizeUserAgent(CHROME_IOS), 'Chrome on iOS');
+    assert.equal(summarizeUserAgent(SAFARI_IPHONE), 'Safari on iOS');
+    assert.equal(summarizeUserAgent(CHROME_ANDROID), 'Chrome on Android');
   });
 });
 

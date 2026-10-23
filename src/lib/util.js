@@ -26,14 +26,23 @@ export function nextStreak(prevStreak, lastActive, today, yesterday) {
 // for the new-sign-in alert email (POST /api/auth/login) — just enough for
 // the recipient to judge "yeah that's my phone" without a UA-parsing
 // library (this app has no bundler/npm deps beyond wrangler — see
-// CLAUDE.md). Deliberately coarse: order matters below (iOS/Android checked
-// before generic OS strings; Edge/OPR before Chrome, since both include
-// "Chrome" in their own UA for compatibility).
+// CLAUDE.md). Deliberately coarse: order matters below — every Chromium-
+// based browser (Edge, Opera, Vivaldi, Samsung Internet, Yandex, ...)
+// includes "Chrome/" in its own UA for site-compatibility, so each one's
+// own distinguishing token must be checked before the generic Chrome/
+// Safari fallbacks, or it misreports as plain Chrome (caught in the wild:
+// a Vivaldi sign-in alert said "Chrome on Linux"). Brave is a deliberate
+// exception — it ships an unmodified Chrome UA with no token of its own
+// as a privacy measure, so it's unavoidably indistinguishable from Chrome
+// here; no UA string can fix that.
 export function summarizeUserAgent(ua) {
   if (!ua) return 'an unknown device';
   let browser = 'an unknown browser';
   if (/Edg\//.test(ua)) browser = 'Edge';
   else if (/OPR\//.test(ua)) browser = 'Opera';
+  else if (/Vivaldi\//.test(ua)) browser = 'Vivaldi';
+  else if (/SamsungBrowser\//.test(ua)) browser = 'Samsung Internet';
+  else if (/YaBrowser\//.test(ua)) browser = 'Yandex Browser';
   else if (/Firefox\//.test(ua)) browser = 'Firefox';
   else if (/CriOS\//.test(ua)) browser = 'Chrome';
   else if (/Chrome\//.test(ua)) browser = 'Chrome';
