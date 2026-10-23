@@ -12,7 +12,7 @@ export async function handleProfileRoutes(request, env, url, path, secureCookie)
     if (!session) return jsonResponse({ error: 'Not authenticated' }, 401);
 
     const user = await env.DB.prepare(
-      'SELECT id, username, role, avatar, created_at, is_public, discord_id, discord_username FROM users WHERE id = ?'
+      'SELECT id, username, role, avatar, created_at, is_public, discord_id, discord_username, email_reminder_dismissed FROM users WHERE id = ?'
     ).bind(session.sub).first();
     if (!user) return jsonResponse({ error: 'Not authenticated' }, 401);
 
@@ -62,7 +62,27 @@ export async function handleProfileRoutes(request, env, url, path, secureCookie)
       roomRank,
       discordLinked: !!user.discord_id,
       discordUsername: user.discord_username ?? null,
+      emailReminderDismissed: !!user.email_reminder_dismissed,
     }, 200, profileExtraHeaders);
+  }
+
+  // POST /api/profile/email-reminder — opt in/out of the post-login "link a
+  // recovery email" nudge (see showEmailReminder in POST /api/auth/login).
+  // Settable from the profile page's Linked Emails section, or from the
+  // nudge popup's own "don't ask again" checkbox.
+  if (path === '/api/profile/email-reminder' && request.method === 'POST') {
+    if (!env.JWT_SECRET || !env.DB) return jsonResponse({ error: 'Server not configured' }, 503);
+    const session = await getSession(request, env);
+    if (!session) return jsonResponse({ error: 'Not authenticated' }, 401);
+
+    let body;
+    try { body = await request.json(); } catch { return jsonResponse({ error: 'Invalid request body' }, 400); }
+    const { dismissed } = body ?? {};
+    if (typeof dismissed !== 'boolean') return jsonResponse({ error: 'dismissed (boolean) required' }, 400);
+
+    await env.DB.prepare('UPDATE users SET email_reminder_dismissed = ? WHERE id = ?')
+      .bind(dismissed ? 1 : 0, session.sub).run();
+    return jsonResponse({ dismissed });
   }
 
   // POST /api/profile/visibility — toggle whether other logged-in users can

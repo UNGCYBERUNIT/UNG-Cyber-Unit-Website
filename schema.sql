@@ -16,6 +16,12 @@ CREATE TABLE IF NOT EXISTS users (
   discord_id         TEXT,
   discord_username   TEXT,
   discord_linked_at  INTEGER,
+  -- Opt-out for the post-login "link a recovery email" nudge (shown when a
+  -- member has zero confirmed user_emails rows). Toggled from the profile
+  -- page's Linked Emails section, or from the popup's own "don't ask again"
+  -- checkbox. Linking a confirmed email makes the nudge moot regardless of
+  -- this flag (see showEmailReminder in POST /api/auth/login).
+  email_reminder_dismissed INTEGER NOT NULL DEFAULT 0,
   -- Session revocation. Embedded in every issued session JWT as `ver`;
   -- getSession() rejects a token whose `ver` doesn't match this column.
   -- Bumped on password reset and POST /api/auth/sign-out-everywhere, so a

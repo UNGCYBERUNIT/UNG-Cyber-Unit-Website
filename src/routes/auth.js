@@ -79,7 +79,7 @@ export async function handleAuthRoutes(request, env, url, path, secureCookie) {
     if (!username || !password) return jsonResponse({ error: 'Username and password required' }, 400);
 
     const user = await env.DB.prepare(
-      'SELECT id, username, password_hash, role, token_version FROM users WHERE username = ?'
+      'SELECT id, username, password_hash, role, token_version, email_reminder_dismissed FROM users WHERE username = ?'
     ).bind(username).first();
     const valid = user && await verifyPassword(String(password), user.password_hash);
     // Always return the same error to prevent username enumeration
@@ -93,7 +93,17 @@ export async function handleAuthRoutes(request, env, url, path, secureCookie) {
       { sub: user.id, username: user.username, role, ver: user.token_version ?? 0, exp: Math.floor(Date.now() / 1000) + 7 * 24 * 3600 },
       env.JWT_SECRET
     );
-    return jsonResponse({ id: user.id, username: user.username, role }, 200, { 'Set-Cookie': sessionCookie(token, 7 * 24 * 3600, secureCookie) });
+    // Nudge to link a recovery email — same condition verify-email/request's
+    // 403 would hit for a guest (never reachable here anyway, since guests
+    // have no password to log in with) plus "already has one" and the
+    // user's own opt-out. Checked fresh every login rather than cached in
+    // the JWT, since linking/dismissing shouldn't require a re-login to
+    // take effect.
+    const hasConfirmedEmail = !!(await env.DB.prepare(
+      'SELECT 1 FROM user_emails WHERE user_id = ? AND email IS NOT NULL LIMIT 1'
+    ).bind(user.id).first());
+    const showEmailReminder = !hasConfirmedEmail && !user.email_reminder_dismissed;
+    return jsonResponse({ id: user.id, username: user.username, role, showEmailReminder }, 200, { 'Set-Cookie': sessionCookie(token, 7 * 24 * 3600, secureCookie) });
   }
 
   // POST /api/auth/logout

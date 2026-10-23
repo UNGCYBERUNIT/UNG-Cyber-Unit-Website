@@ -1664,6 +1664,40 @@ describe('POST /api/profile/visibility', () => {
   });
 });
 
+describe('POST /api/profile/email-reminder', () => {
+  const post = (body, cookie, db) => worker.fetch(
+    new Request('https://example.com/api/profile/email-reminder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(cookie ? { Cookie: cookie } : {}) },
+      body: JSON.stringify(body),
+    }),
+    { JWT_SECRET: SECRET, DB: db },
+  );
+
+  test('should require a session', async () => {
+    const res = await post({ dismissed: true }, null, mockDB());
+    assert.equal(res.status, 401);
+  });
+
+  test('should reject a non-boolean body', async () => {
+    const cookie = await sessionCookieFor({ sub: 1, username: 'alice', role: 'member' });
+    const res = await post({ dismissed: 'yes' }, cookie, mockDB());
+    assert.equal(res.status, 400);
+  });
+
+  test('should update only the caller\'s own row', async () => {
+    const db = mockDB();
+    const cookie = await sessionCookieFor({ sub: 42, username: 'alice', role: 'member' });
+    const res = await post({ dismissed: true }, cookie, db);
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.dismissed, true);
+    const update = db.calls.find(c => c.op === 'run');
+    assert.match(update.sql, /UPDATE users SET email_reminder_dismissed = \? WHERE id = \?/);
+    assert.deepEqual(update.bindings, [1, 42]);
+  });
+});
+
 // ─── Discord Account Pairing (docs/plan-discord-pairing.md) ─────────────────────
 
 // A mock D1 keyed by discord_id, same shape/spirit as mockPublicProfileDB
@@ -1895,6 +1929,93 @@ describe('GET /api/bot/pathfinder-status', () => {
     const data = await res.json();
     assert.equal(data.users.length, 2);
     assert.ok(data.users.every(u => typeof u.complete === 'boolean'));
+  });
+});
+
+// ─── POST /api/auth/login ────────────────────────────────────────────────────────
+
+// A mock D1 for login: resolves the users-by-username lookup from a fixed
+// map (password_hash must be a real hashPassword() output so verifyPassword
+// actually succeeds), and the post-auth "does this account have a confirmed
+// email" check from a separately-controlled boolean — same per-query
+// dispatch-by-SQL style as mockPublicProfileDB above.
+function mockLoginDB(usersByUsername, { hasConfirmedEmail = false } = {}) {
+  return {
+    prepare(sql) {
+      return {
+        bind: (...bindings) => ({
+          first: async () => {
+            if (/SELECT token_version FROM users WHERE id = \?/.test(sql)) return { token_version: 0 };
+            if (/FROM users WHERE username = \?/.test(sql)) return usersByUsername[bindings[0]] ?? null;
+            if (/FROM user_emails WHERE user_id = \? AND email IS NOT NULL/.test(sql)) {
+              return hasConfirmedEmail ? { 1: 1 } : null;
+            }
+            return null;
+          },
+          run: async () => ({ meta: { last_row_id: 1, changes: 1 } }),
+        }),
+      };
+    },
+  };
+}
+
+describe('POST /api/auth/login', () => {
+  const post = (body, db) => worker.fetch(
+    new Request('https://example.com/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+    { JWT_SECRET: SECRET, DB: db },
+  );
+
+  test('should reject an unknown username with a generic error (no enumeration)', async () => {
+    const res = await post({ username: 'nobody', password: 'whatever1' }, mockLoginDB({}));
+    assert.equal(res.status, 401);
+    const data = await res.json();
+    assert.equal(data.error, 'Invalid username or password');
+  });
+
+  test('should reject a wrong password with the same generic error', async () => {
+    const hash = await hashPassword('correct-password');
+    const db = mockLoginDB({ alice: { id: 1, username: 'alice', password_hash: hash, role: 'member', token_version: 0, email_reminder_dismissed: 0 } });
+    const res = await post({ username: 'alice', password: 'wrong-password' }, db);
+    assert.equal(res.status, 401);
+  });
+
+  test('should flag showEmailReminder when the account has no confirmed email and has not dismissed it', async () => {
+    const hash = await hashPassword('correct-password');
+    const db = mockLoginDB(
+      { alice: { id: 1, username: 'alice', password_hash: hash, role: 'member', token_version: 0, email_reminder_dismissed: 0 } },
+      { hasConfirmedEmail: false },
+    );
+    const res = await post({ username: 'alice', password: 'correct-password' }, db);
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.showEmailReminder, true);
+    assert.match(res.headers.get('Set-Cookie'), /Max-Age=604800/); // still a normal 7-day session
+  });
+
+  test('should not flag showEmailReminder when the account already has a confirmed email', async () => {
+    const hash = await hashPassword('correct-password');
+    const db = mockLoginDB(
+      { alice: { id: 1, username: 'alice', password_hash: hash, role: 'member', token_version: 0, email_reminder_dismissed: 0 } },
+      { hasConfirmedEmail: true },
+    );
+    const res = await post({ username: 'alice', password: 'correct-password' }, db);
+    const data = await res.json();
+    assert.equal(data.showEmailReminder, false);
+  });
+
+  test('should not flag showEmailReminder when the account has dismissed it, even with no email', async () => {
+    const hash = await hashPassword('correct-password');
+    const db = mockLoginDB(
+      { alice: { id: 1, username: 'alice', password_hash: hash, role: 'member', token_version: 0, email_reminder_dismissed: 1 } },
+      { hasConfirmedEmail: false },
+    );
+    const res = await post({ username: 'alice', password: 'correct-password' }, db);
+    const data = await res.json();
+    assert.equal(data.showEmailReminder, false);
   });
 });
 

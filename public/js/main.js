@@ -1029,10 +1029,7 @@ async function handleLogin(e) {
       if (forgotLinks) forgotLinks.hidden = false;
       return;
     }
-    currentUser = data;
-    closeAuthModal();
-    updateAuthNav();
-    window.location.reload();
+    handleLoginSuccess(data);
   } catch {
     errEl.textContent = 'Network error. Please try again.';
     errEl.hidden = false;
@@ -1112,15 +1109,41 @@ async function handleRegister(e) {
   }
 }
 
-// One-time nudge shown right after a fresh register/upgrade success — a
-// brand-new account has no linked email yet, so forgot-password/
-// forgot-username (both lookups against user_emails) have nothing to find
-// until the member links one. Reuses the same POST /api/auth/verify-email/
-// request endpoint as the profile page's "Linked Emails" section
-// (renderEmailVerification), just in a standalone overlay instead of that
-// page's form. onDone always runs — on send, skip, Escape, or an
-// overlay-backdrop click — since this is a one-time nudge, not a blocker.
-function promptLinkEmail(onDone) {
+function handleLoginSuccess(data) {
+  currentUser = data;
+  closeAuthModal();
+  updateAuthNav();
+  // showEmailReminder (see POST /api/auth/login) is false whenever the
+  // account already has a confirmed email or has dismissed the nudge —
+  // checked server-side, not cached client-side, so toggling the setting
+  // on the profile page takes effect on the very next login.
+  if (data.showEmailReminder) {
+    promptLinkEmail(() => window.location.reload(), {
+      message: "You don't have a recovery email linked yet. Add one so you can get back in if you ever forget your password or username.",
+      showDismissOption: true,
+    });
+  } else {
+    window.location.reload();
+  }
+}
+
+// Shown right after a fresh register/upgrade success, and again on login
+// for an account with no confirmed email that hasn't dismissed the nudge
+// (showDismissOption, see showEmailReminder in POST /api/auth/login) — a
+// recovery-less account has no way to recover forgot-password/
+// forgot-username (both lookups against user_emails). Reuses the same
+// POST /api/auth/verify-email/request endpoint as the profile page's
+// "Linked Emails" section (renderEmailVerification), just in a standalone
+// overlay instead of that page's form. onDone always runs — on send, skip,
+// Escape, or an overlay-backdrop click — since this is a nudge, not a
+// blocker. When showDismissOption is set, every one of those four exits
+// also persists the "don't ask again" checkbox via POST
+// /api/profile/email-reminder if it's checked (fire-and-forget — a failed
+// write just means the nudge reappears next login, not a dead end).
+function promptLinkEmail(onDone, {
+  message = 'Account created! Add a recovery email so you can get back in if you ever forget your password or username.',
+  showDismissOption = false,
+} = {}) {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay confirm-overlay';
   overlay.setAttribute('role', 'dialog');
@@ -1128,13 +1151,17 @@ function promptLinkEmail(onDone) {
   overlay.setAttribute('aria-label', 'Link a recovery email');
   overlay.innerHTML = `
     <div class="modal confirm-modal confirm-modal--neutral">
-      <p class="confirm-message">Account created! Add a recovery email so you can get back in if you ever forget your password or username.</p>
+      <p class="confirm-message">${escHtml(message)}</p>
       <form id="linkEmailForm" class="modal-form" novalidate>
         <div class="form-group">
           <label for="linkEmailInput">Email address</label>
           <input type="email" id="linkEmailInput" placeholder="you@example.com" required>
         </div>
         <p class="form-error" id="linkEmailError" hidden></p>
+        ${showDismissOption ? `
+        <label class="link-email-dismiss">
+          <input type="checkbox" id="linkEmailDismiss"> Don't ask me again (change anytime in Profile &gt; Linked Emails)
+        </label>` : ''}
         <div class="confirm-actions">
           <button type="button" class="btn" id="linkEmailSkip">Maybe later</button>
           <button type="submit" class="btn btn-primary" id="linkEmailSubmit">Send Verification Email</button>
@@ -1143,7 +1170,18 @@ function promptLinkEmail(onDone) {
     </div>`;
   document.body.appendChild(overlay);
 
-  const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey); onDone(); };
+  const close = () => {
+    if (overlay.querySelector('#linkEmailDismiss')?.checked) {
+      fetch('/api/profile/email-reminder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dismissed: true }),
+      }).catch(() => {});
+    }
+    overlay.remove();
+    document.removeEventListener('keydown', onKey);
+    onDone();
+  };
   overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
   overlay.querySelector('#linkEmailSkip').addEventListener('click', close);
   overlay.querySelector('#linkEmailForm').addEventListener('submit', async e => {
@@ -3953,7 +3991,24 @@ function renderEmailVerification(profile) {
     : `<p style="color:var(--text-muted);font-family:'Share Tech Mono',monospace;font-size:0.85rem;">You've linked the maximum of ${MAX_LINKED_EMAILS} email addresses. Remove one to add another.</p>
        <p class="form-error" id="emailVerifyError" hidden></p>`;
 
-  wrap.innerHTML = rowsHtml + formOrLimitHtml;
+  // Opt-out of the post-login "link a recovery email" nudge (see
+  // showEmailReminder in POST /api/auth/login) — shown regardless of
+  // whether an email is linked yet, so it's just as easy to turn back on.
+  const reminderToggleHtml = `
+    <div class="profile-visibility" style="margin-top:1rem;">
+      <label class="visibility-toggle">
+        <input type="checkbox" id="emailReminderToggle" ${profile.emailReminderDismissed ? '' : 'checked'} aria-describedby="emailReminderStatusText">
+        <span class="visibility-toggle-slider" aria-hidden="true"></span>
+      </label>
+      <span class="visibility-toggle-copy">
+        <strong>Remind me at sign-in</strong>
+        <span id="emailReminderStatusText">${profile.emailReminderDismissed
+          ? "Won't ask again until you turn this back on"
+          : "Nudges you to link a recovery email at sign-in if you haven't yet"}</span>
+      </span>
+    </div>`;
+
+  wrap.innerHTML = rowsHtml + formOrLimitHtml + reminderToggleHtml;
 
   document.getElementById('emailVerifyForm')?.addEventListener('submit', (e) => {
     e.preventDefault();
@@ -3964,6 +4019,37 @@ function renderEmailVerification(profile) {
   });
   wrap.querySelectorAll('[data-remove-id]').forEach(btn => {
     btn.addEventListener('click', () => removeLinkedEmail(btn.dataset.removeId, btn));
+  });
+  wireEmailReminderToggle();
+}
+
+function wireEmailReminderToggle() {
+  const toggle = document.getElementById('emailReminderToggle');
+  const statusText = document.getElementById('emailReminderStatusText');
+  if (!toggle) return;
+
+  toggle.addEventListener('change', async () => {
+    const dismissed = !toggle.checked;
+    toggle.disabled = true;
+    try {
+      const res = await fetch('/api/profile/email-reminder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dismissed }),
+      });
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      if (statusText) {
+        statusText.textContent = data.dismissed
+          ? "Won't ask again until you turn this back on"
+          : "Nudges you to link a recovery email at sign-in if you haven't yet";
+      }
+    } catch {
+      toggle.checked = !toggle.checked; // revert on failure
+      if (statusText) statusText.textContent = 'Could not update — please try again.';
+    } finally {
+      toggle.disabled = false;
+    }
   });
 }
 
