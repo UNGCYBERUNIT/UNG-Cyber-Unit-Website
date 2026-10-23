@@ -1102,11 +1102,88 @@ async function handleRegister(e) {
     currentUser = data;
     closeAuthModal();
     updateAuthNav();
-    window.location.reload();
+    // register/upgrade both always return role 'member' (never 'guest'),
+    // so linking an email is always possible here — unlike after
+    // POST /api/auth/guest, where verify-email/request would 403.
+    promptLinkEmail(() => window.location.reload());
   } catch {
     errEl.textContent = 'Network error. Please try again.';
     errEl.hidden = false;
   }
+}
+
+// One-time nudge shown right after a fresh register/upgrade success — a
+// brand-new account has no linked email yet, so forgot-password/
+// forgot-username (both lookups against user_emails) have nothing to find
+// until the member links one. Reuses the same POST /api/auth/verify-email/
+// request endpoint as the profile page's "Linked Emails" section
+// (renderEmailVerification), just in a standalone overlay instead of that
+// page's form. onDone always runs — on send, skip, Escape, or an
+// overlay-backdrop click — since this is a one-time nudge, not a blocker.
+function promptLinkEmail(onDone) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay confirm-overlay';
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
+  overlay.setAttribute('aria-label', 'Link a recovery email');
+  overlay.innerHTML = `
+    <div class="modal confirm-modal confirm-modal--neutral">
+      <p class="confirm-message">Account created! Add a recovery email so you can get back in if you ever forget your password or username.</p>
+      <form id="linkEmailForm" class="modal-form" novalidate>
+        <div class="form-group">
+          <label for="linkEmailInput">Email address</label>
+          <input type="email" id="linkEmailInput" placeholder="you@example.com" required>
+        </div>
+        <p class="form-error" id="linkEmailError" hidden></p>
+        <div class="confirm-actions">
+          <button type="button" class="btn" id="linkEmailSkip">Maybe later</button>
+          <button type="submit" class="btn btn-primary" id="linkEmailSubmit">Send Verification Email</button>
+        </div>
+      </form>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey); onDone(); };
+  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+  overlay.querySelector('#linkEmailSkip').addEventListener('click', close);
+  overlay.querySelector('#linkEmailForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const errEl = overlay.querySelector('#linkEmailError');
+    const submitBtn = overlay.querySelector('#linkEmailSubmit');
+    errEl.hidden = true;
+    submitBtn.disabled = true;
+    try {
+      const res = await fetch('/api/auth/verify-email/request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: overlay.querySelector('#linkEmailInput').value.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        errEl.textContent = data.error || 'Failed to send verification email.';
+        errEl.hidden = false;
+        submitBtn.disabled = false;
+        return;
+      }
+      overlay.querySelector('.confirm-message').textContent = 'Verification email sent — check your inbox to finish linking it.';
+      overlay.querySelector('#linkEmailForm').hidden = true;
+      const doneBtn = document.createElement('button');
+      doneBtn.type = 'button';
+      doneBtn.className = 'btn btn-primary';
+      doneBtn.textContent = 'Done';
+      doneBtn.addEventListener('click', close);
+      overlay.querySelector('.modal').appendChild(doneBtn);
+      doneBtn.focus();
+    } catch {
+      errEl.textContent = 'Network error. Please try again.';
+      errEl.hidden = false;
+      submitBtn.disabled = false;
+    }
+  });
+
+  function onKey(e) { if (e.key === 'Escape') { e.preventDefault(); close(); } }
+  document.addEventListener('keydown', onKey);
+  overlay.querySelector('#linkEmailInput').focus();
 }
 
 // ─── Progress ─────────────────────────────────────────────────────────────────
