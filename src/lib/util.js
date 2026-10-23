@@ -22,6 +22,33 @@ export function nextStreak(prevStreak, lastActive, today, yesterday) {
   return 1;
 }
 
+// Coarse, dependency-free "Browser on OS" summary of a User-Agent string,
+// for the new-sign-in alert email (POST /api/auth/login) — just enough for
+// the recipient to judge "yeah that's my phone" without a UA-parsing
+// library (this app has no bundler/npm deps beyond wrangler — see
+// CLAUDE.md). Deliberately coarse: order matters below (iOS/Android checked
+// before generic OS strings; Edge/OPR before Chrome, since both include
+// "Chrome" in their own UA for compatibility).
+export function summarizeUserAgent(ua) {
+  if (!ua) return 'an unknown device';
+  let browser = 'an unknown browser';
+  if (/Edg\//.test(ua)) browser = 'Edge';
+  else if (/OPR\//.test(ua)) browser = 'Opera';
+  else if (/Firefox\//.test(ua)) browser = 'Firefox';
+  else if (/CriOS\//.test(ua)) browser = 'Chrome';
+  else if (/Chrome\//.test(ua)) browser = 'Chrome';
+  else if (/Safari\//.test(ua)) browser = 'Safari';
+
+  let os = 'an unknown OS';
+  if (/iPhone|iPad|iPod/.test(ua)) os = 'iOS';
+  else if (/Android/.test(ua)) os = 'Android';
+  else if (/Windows/.test(ua)) os = 'Windows';
+  else if (/Mac OS X/.test(ua)) os = 'macOS';
+  else if (/Linux/.test(ua)) os = 'Linux';
+
+  return `${browser} on ${os}`;
+}
+
 export function generateRoomCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   const bytes = crypto.getRandomValues(new Uint8Array(8));

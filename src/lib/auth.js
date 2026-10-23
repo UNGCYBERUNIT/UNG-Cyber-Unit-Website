@@ -97,6 +97,19 @@ export function sessionCookie(token, maxAge, secure = true) {
   return `session=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${maxAge}${secure ? '; Secure' : ''}`;
 }
 
+// Long-lived (1 year), separate from the session cookie above — it persists
+// across logins/logouts/session expiry so POST /api/auth/login can ask "has
+// this browser signed into this account before" without keying off IP
+// (changes constantly: mobile networks, VPNs) or User-Agent alone (shared
+// across thousands of installs of the same browser/OS). Not itself an
+// authentication credential — losing/clearing it just makes the next login
+// look "new" and send an alert email, the same fail-safe GitHub/Google use.
+// See known_devices in schema.sql.
+export const DEVICE_COOKIE_MAX_AGE = 365 * 24 * 3600;
+export function deviceCookie(token, secure = true) {
+  return `device_id=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${DEVICE_COOKIE_MAX_AGE}${secure ? '; Secure' : ''}`;
+}
+
 // Guest sessions are short-lived (capped well below members' 7d) since guest
 // accounts are throwaway, permissionless, and created with no rate limit
 // beyond the shared signup limiter — bounding their lifetime bounds the

@@ -32,7 +32,14 @@ export function addSecurityHeaders(headers) {
 
 export function jsonResponse(data, status = 200, extra = {}) {
   const h = new Headers({ 'Content-Type': 'application/json' });
-  for (const [k, v] of Object.entries(extra)) h.set(k, v);
+  // An array value appends multiple instances of that header instead of
+  // replacing it — needed for responses that set two cookies at once (e.g.
+  // POST /api/auth/login's session + device_id), since Headers.set()
+  // would make the second Set-Cookie clobber the first.
+  for (const [k, v] of Object.entries(extra)) {
+    if (Array.isArray(v)) v.forEach(val => h.append(k, val));
+    else h.set(k, v);
+  }
   addSecurityHeaders(h);
   return new Response(JSON.stringify(data), { status, headers: h });
 }

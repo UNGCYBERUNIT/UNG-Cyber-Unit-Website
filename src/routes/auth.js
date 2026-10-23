@@ -1,4 +1,4 @@
-import { jsonResponse, addSecurityHeaders } from '../lib/http.js';
+import { jsonResponse, addSecurityHeaders, parseCookies, clientIP } from '../lib/http.js';
 import { escapeHtml } from '../lib/render.js';
 import {
   hashPassword,
@@ -8,6 +8,7 @@ import {
   signJWT,
   getSession,
   sessionCookie,
+  deviceCookie,
   refreshRoleIfStale,
   requireRole,
   authActionPageResponse,
@@ -22,7 +23,7 @@ import {
   recordLoginFailure,
 } from '../lib/ratelimit.js';
 import { sendResendEmail } from '../lib/email.js';
-import { dateStrUTC, nextStreak } from '../lib/util.js';
+import { dateStrUTC, nextStreak, summarizeUserAgent } from '../lib/util.js';
 import { topics } from '../data/topics.js';
 
 // Cap on how many email addresses one account can have linked at once
@@ -103,7 +104,64 @@ export async function handleAuthRoutes(request, env, url, path, secureCookie) {
       'SELECT 1 FROM user_emails WHERE user_id = ? AND email IS NOT NULL LIMIT 1'
     ).bind(user.id).first());
     const showEmailReminder = !hasConfirmedEmail && !user.email_reminder_dismissed;
-    return jsonResponse({ id: user.id, username: user.username, role, showEmailReminder }, 200, { 'Set-Cookie': sessionCookie(token, 7 * 24 * 3600, secureCookie) });
+
+    // New-device detection + alert (see known_devices in schema.sql and
+    // deviceCookie() in src/lib/auth.js). Guests never reach this route (no
+    // password to log in with), so this always applies to a real account.
+    // No device_id cookie, or one we don't recognize for THIS account, both
+    // count as "new" — generating a fresh token in the former case so
+    // there's always one to set below.
+    const cookies = parseCookies(request.headers.get('Cookie'));
+    const deviceToken = cookies.device_id || randomTokenHex(24);
+    const deviceTokenHash = await sha256Hex(deviceToken);
+    const now = Date.now();
+    const knownDevice = await env.DB.prepare(
+      'SELECT 1 FROM known_devices WHERE user_id = ? AND device_token_hash = ?'
+    ).bind(user.id, deviceTokenHash).first();
+
+    if (knownDevice) {
+      await env.DB.prepare(
+        'UPDATE known_devices SET last_seen_at = ? WHERE user_id = ? AND device_token_hash = ?'
+      ).bind(now, user.id, deviceTokenHash).run();
+    } else {
+      await env.DB.prepare(`
+        INSERT INTO known_devices (user_id, device_token_hash, user_agent, first_seen_at, last_seen_at)
+        VALUES (?, ?, ?, ?, ?)
+      `).bind(user.id, deviceTokenHash, request.headers.get('User-Agent') ?? null, now, now).run();
+
+      // Alert every verified email on file (same "every verified address,
+      // no designated primary" pattern as Kanban's notifications, not a
+      // security-relevant choice either way — there's nothing to pick).
+      // Best-effort: a failed send never blocks the login response.
+      if (hasConfirmedEmail && env.RESEND_API_KEY) {
+        const { results: emailRows } = await env.DB.prepare(
+          'SELECT email FROM user_emails WHERE user_id = ? AND email IS NOT NULL'
+        ).bind(user.id).all();
+        const recipients = (emailRows ?? []).map(r => r.email);
+        if (recipients.length) {
+          const when = new Date(now).toLocaleString('en-US', { timeZone: 'UTC', dateStyle: 'medium', timeStyle: 'short' });
+          const deviceSummary = summarizeUserAgent(request.headers.get('User-Agent'));
+          const ip = clientIP(request);
+          try {
+            await sendResendEmail(env, {
+              from: 'CyberUnit @ UNG <security@ungcyberunit.org>',
+              to: recipients,
+              subject: 'New sign-in to your account — CyberUnit @ UNG',
+              text: `We noticed a new sign-in to your CyberUnit @ UNG account (${user.username}) on ${when} UTC, from ${deviceSummary}, IP ${ip}.\n\nIf this was you, no action is needed — this is just a security notice for a browser we haven't seen before.\n\nIf you don't recognize this, go to ${url.origin} and use "Forgot password?" to reset it immediately, then use "Sign out everywhere" from your profile to end any other active sessions.`,
+              html: `<p>We noticed a new sign-in to your CyberUnit @ UNG account (<strong>${escapeHtml(user.username)}</strong>) on ${when} UTC, from ${escapeHtml(deviceSummary)}, IP ${escapeHtml(ip)}.</p><p>If this was you, no action is needed — this is just a security notice for a browser we haven't seen before.</p><p>If you don't recognize this, go to <a href="${url.origin}">${escapeHtml(url.origin)}</a> and use "Forgot password?" to reset it immediately, then use "Sign out everywhere" from your profile to end any other active sessions.</p>`,
+            });
+          } catch (err) {
+            console.error('new-device alert send failed', err.message);
+          }
+        }
+      }
+    }
+
+    return jsonResponse(
+      { id: user.id, username: user.username, role, showEmailReminder },
+      200,
+      { 'Set-Cookie': [sessionCookie(token, 7 * 24 * 3600, secureCookie), deviceCookie(deviceToken, secureCookie)] },
+    );
   }
 
   // POST /api/auth/logout
@@ -125,6 +183,11 @@ export async function handleAuthRoutes(request, env, url, path, secureCookie) {
     const session = await getSession(request, env);
     if (!session) return jsonResponse({ error: 'Not authenticated' }, 401);
     await env.DB.prepare('UPDATE users SET token_version = token_version + 1 WHERE id = ?').bind(session.sub).run();
+    // Same rationale as reset-password's known_devices wipe above — a
+    // shared/stolen browser may have gotten silently remembered as
+    // "known" before this point, which would otherwise keep skipping the
+    // new-sign-in alert on its next login.
+    await env.DB.prepare('DELETE FROM known_devices WHERE user_id = ?').bind(session.sub).run();
     return jsonResponse({ ok: true }, 200, { 'Set-Cookie': sessionCookie('', 0, secureCookie) });
   }
 
@@ -529,6 +592,14 @@ export async function handleAuthRoutes(request, env, url, path, secureCookie) {
         password_reset_token_hash = NULL, password_reset_expires_at = NULL
       WHERE id = ? RETURNING token_version
     `).bind(hash, match.id).first();
+    // Forget every known_devices row too, same "someone else may have had
+    // access" rationale as the token_version bump above — otherwise an
+    // attacker's browser that got silently remembered before the reset
+    // would keep skipping the new-sign-in alert afterward. The resetter's
+    // own next explicit login will look "new" once more and send one
+    // extra (harmless) alert — an acceptable trade for not leaving a
+    // stale trusted device behind.
+    await env.DB.prepare('DELETE FROM known_devices WHERE user_id = ?').bind(match.id).run();
 
     const sessionToken = await signJWT(
       { sub: match.id, username: match.username, role: match.role ?? 'member', ver: updated?.token_version ?? 0, exp: Math.floor(Date.now() / 1000) + 7 * 24 * 3600 },

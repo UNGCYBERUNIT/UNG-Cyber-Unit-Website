@@ -97,6 +97,7 @@ export async function handleAdminRoutes(request, env, url, path, secureCookie) {
     stmts.push(env.DB.prepare('DELETE FROM quiz_results WHERE user_id = ?').bind(targetId));
     stmts.push(env.DB.prepare('DELETE FROM challenge_completions WHERE user_id = ?').bind(targetId));
     stmts.push(env.DB.prepare('DELETE FROM user_emails WHERE user_id = ?').bind(targetId));
+    stmts.push(env.DB.prepare('DELETE FROM known_devices WHERE user_id = ?').bind(targetId));
     stmts.push(env.DB.prepare('UPDATE kanban_items SET assigned_to = NULL WHERE assigned_to = ?').bind(targetId));
     stmts.push(env.DB.prepare('DELETE FROM users WHERE id = ?').bind(targetId));
     stmts.push(logAudit(env, {

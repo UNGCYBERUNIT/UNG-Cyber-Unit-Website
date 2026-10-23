@@ -57,6 +57,7 @@ import { handlePagesRoutes } from './src/routes/pages.js';
 import {
   dateStrUTC,
   nextStreak,
+  summarizeUserAgent,
   generateRoomCode,
   parseCSVLine,
   parseCSV,
@@ -112,6 +113,7 @@ export {
   jsonResponse,
   dateStrUTC,
   nextStreak,
+  summarizeUserAgent,
   topics,
   topicsWithCheatSheet,
   pathwayStages,

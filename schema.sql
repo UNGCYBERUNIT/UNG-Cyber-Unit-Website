@@ -234,6 +234,27 @@ CREATE TABLE IF NOT EXISTS login_failures (
 );
 CREATE INDEX IF NOT EXISTS idx_lf_ip_ts ON login_failures (ip, ts);
 
+-- Devices POST /api/auth/login has already alerted-on-and-remembered for a
+-- given account, keyed by a hash of the long-lived device_id cookie (see
+-- deviceCookie() in src/lib/auth.js) — never the raw cookie value, same
+-- hash-not-plaintext rule as every other single-use/bearer token in this
+-- app. A login with no device_id cookie, or one with no matching row here
+-- for *this* user_id, is "new" and triggers the new-sign-in alert email
+-- before being recorded. (user_id, device_token_hash) is unique rather than
+-- device_token_hash alone, since the same browser logging into a second
+-- account on this site is legitimately "new" from that second account's
+-- perspective even though the cookie itself isn't.
+CREATE TABLE IF NOT EXISTS known_devices (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id           INTEGER NOT NULL,
+  device_token_hash TEXT    NOT NULL,
+  user_agent        TEXT,
+  first_seen_at     INTEGER NOT NULL,
+  last_seen_at      INTEGER NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_known_devices_user_device ON known_devices (user_id, device_token_hash);
+
 -- Instructor-only answer keys for downloadable challenge sets (see
 -- /log-analysis-challenge). Stored as a D1 blob rather than a public/ static
 -- asset specifically so the file never enters the (public) git repo/GitHub

@@ -1345,6 +1345,10 @@ describe('POST /api/auth/sign-out-everywhere', () => {
     assert.ok(bump, 'expected an UPDATE bumping token_version');
     assert.equal(bump.bindings[0], 1); // session.sub
     assert.match(res.headers.get('Set-Cookie'), /session=;/);
+
+    const forget = db.calls.find(c => c.op === 'run' && /DELETE FROM known_devices WHERE user_id = \?/.test(c.sql));
+    assert.ok(forget, 'expected known_devices to be cleared too, so a stolen browser alerts again next login');
+    assert.equal(forget.bindings[0], 1);
   });
 });
 
@@ -1567,6 +1571,58 @@ describe('POST /api/auth/forgot-password (multi-email lookup)', () => {
     assert.equal(res.status, 200);
     const data = await res.json();
     assert.equal(data.ok, true);
+  });
+});
+
+describe('POST /api/auth/reset-password', () => {
+  function mockResetPasswordDB() {
+    const calls = [];
+    return {
+      calls,
+      prepare(sql) {
+        return {
+          bind: (...bindings) => ({
+            first: async () => {
+              calls.push({ sql, bindings, op: 'first' });
+              if (/SELECT id, username, role FROM users WHERE password_reset_token_hash = \?/.test(sql)) {
+                return { id: 1, username: 'alice', role: 'member' };
+              }
+              if (/UPDATE users SET password_hash = \?.*RETURNING token_version/s.test(sql)) {
+                return { token_version: 1 };
+              }
+              return null;
+            },
+            run: async () => { calls.push({ sql, bindings, op: 'run' }); return { meta: { changes: 1 } }; },
+          }),
+        };
+      },
+    };
+  }
+
+  const post = (token, password, passwordConfirm, db) => {
+    const form = new URLSearchParams({ token, password, passwordConfirm });
+    return worker.fetch(
+      new Request('https://example.com/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: form.toString(),
+      }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+  };
+
+  // known_devices is cleared for the SAME reason the token_version bump
+  // above it invalidates every other session: a reset means "someone else
+  // may have had access," so a browser that got silently remembered as
+  // "known" before this point shouldn't keep skipping the new-sign-in
+  // alert afterward either.
+  test('should clear known_devices for this account alongside the token_version bump', async () => {
+    const db = mockResetPasswordDB();
+    const res = await post('valid-token', 'NewPassword123!', 'NewPassword123!', db);
+    assert.equal(res.status, 302);
+    const forget = db.calls.find(c => c.op === 'run' && /DELETE FROM known_devices WHERE user_id = \?/.test(c.sql));
+    assert.ok(forget, 'expected known_devices to be cleared on password reset');
+    assert.equal(forget.bindings[0], 1);
   });
 });
 
@@ -1939,20 +1995,33 @@ describe('GET /api/bot/pathfinder-status', () => {
 // actually succeeds), and the post-auth "does this account have a confirmed
 // email" check from a separately-controlled boolean — same per-query
 // dispatch-by-SQL style as mockPublicProfileDB above.
-function mockLoginDB(usersByUsername, { hasConfirmedEmail = false } = {}) {
+function mockLoginDB(usersByUsername, { hasConfirmedEmail = false, isKnownDevice = false, emails = ['alice@example.com'] } = {}) {
+  const calls = [];
   return {
+    calls,
     prepare(sql) {
       return {
         bind: (...bindings) => ({
           first: async () => {
+            calls.push({ sql, bindings, op: 'first' });
             if (/SELECT token_version FROM users WHERE id = \?/.test(sql)) return { token_version: 0 };
             if (/FROM users WHERE username = \?/.test(sql)) return usersByUsername[bindings[0]] ?? null;
-            if (/FROM user_emails WHERE user_id = \? AND email IS NOT NULL/.test(sql)) {
+            if (/SELECT 1 FROM user_emails WHERE user_id = \? AND email IS NOT NULL/.test(sql)) {
               return hasConfirmedEmail ? { 1: 1 } : null;
+            }
+            if (/SELECT 1 FROM known_devices WHERE user_id = \? AND device_token_hash = \?/.test(sql)) {
+              return isKnownDevice ? { 1: 1 } : null;
             }
             return null;
           },
-          run: async () => ({ meta: { last_row_id: 1, changes: 1 } }),
+          all: async () => {
+            calls.push({ sql, bindings, op: 'all' });
+            if (/SELECT email FROM user_emails WHERE user_id = \? AND email IS NOT NULL/.test(sql)) {
+              return { results: hasConfirmedEmail ? emails.map(e => ({ email: e })) : [] };
+            }
+            return { results: [] };
+          },
+          run: async () => { calls.push({ sql, bindings, op: 'run' }); return { meta: { last_row_id: 1, changes: 1 } }; },
         }),
       };
     },
@@ -1960,13 +2029,13 @@ function mockLoginDB(usersByUsername, { hasConfirmedEmail = false } = {}) {
 }
 
 describe('POST /api/auth/login', () => {
-  const post = (body, db) => worker.fetch(
+  const post = (body, db, { headers = {}, env = {} } = {}) => worker.fetch(
     new Request('https://example.com/api/auth/login', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...headers },
       body: JSON.stringify(body),
     }),
-    { JWT_SECRET: SECRET, DB: db },
+    { JWT_SECRET: SECRET, DB: db, ...env },
   );
 
   test('should reject an unknown username with a generic error (no enumeration)', async () => {
@@ -2016,6 +2085,102 @@ describe('POST /api/auth/login', () => {
     const res = await post({ username: 'alice', password: 'correct-password' }, db);
     const data = await res.json();
     assert.equal(data.showEmailReminder, false);
+  });
+
+  const ALICE = { id: 1, username: 'alice', role: 'member', token_version: 0, email_reminder_dismissed: 0 };
+
+  test('should set both a session and a device_id cookie on a first-ever login (no device_id cookie sent)', async () => {
+    const hash = await hashPassword('correct-password');
+    const db = mockLoginDB({ alice: { ...ALICE, password_hash: hash } });
+    const res = await post({ username: 'alice', password: 'correct-password' }, db);
+    const cookies = res.headers.getSetCookie();
+    assert.ok(cookies.some(c => c.startsWith('session=') && c.includes('Max-Age=604800')));
+    assert.ok(cookies.some(c => c.startsWith('device_id=') && c.includes('Max-Age=31536000')));
+  });
+
+  test('should insert a known_devices row and alert every verified email on a new device', async (t) => {
+    const fetchCalls = [];
+    t.mock.method(global, 'fetch', async (input, opts) => {
+      fetchCalls.push({ input, opts });
+      return { ok: true, json: async () => ({}) };
+    });
+    const hash = await hashPassword('correct-password');
+    const db = mockLoginDB(
+      { alice: { ...ALICE, password_hash: hash } },
+      { hasConfirmedEmail: true, isKnownDevice: false, emails: ['alice@example.com', 'alice2@example.com'] },
+    );
+    const res = await post(
+      { username: 'alice', password: 'correct-password' },
+      db,
+      { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0', 'CF-Connecting-IP': '203.0.113.7' }, env: { RESEND_API_KEY: 'test-key' } },
+    );
+    assert.equal(res.status, 200);
+
+    const insert = db.calls.find(c => c.op === 'run' && /INSERT INTO known_devices/.test(c.sql));
+    assert.ok(insert, 'expected a new known_devices row to be inserted');
+    assert.equal(insert.bindings[0], 1); // user_id
+
+    assert.equal(fetchCalls.length, 1);
+    const sentBody = JSON.parse(fetchCalls[0].opts.body);
+    assert.deepEqual(sentBody.to, ['alice@example.com', 'alice2@example.com']);
+    assert.match(sentBody.subject, /New sign-in/);
+    assert.match(sentBody.text, /Chrome on Windows/);
+    assert.match(sentBody.text, /203\.0\.113\.7/);
+  });
+
+  test('should not alert or re-insert when the device is already known', async (t) => {
+    const fetchCalls = [];
+    t.mock.method(global, 'fetch', async (...args) => { fetchCalls.push(args); return { ok: true, json: async () => ({}) }; });
+    const hash = await hashPassword('correct-password');
+    const db = mockLoginDB(
+      { alice: { ...ALICE, password_hash: hash } },
+      { hasConfirmedEmail: true, isKnownDevice: true },
+    );
+    const res = await post(
+      { username: 'alice', password: 'correct-password' },
+      db,
+      { headers: { Cookie: 'device_id=some-previously-issued-token' }, env: { RESEND_API_KEY: 'test-key' } },
+    );
+    assert.equal(res.status, 200);
+    assert.equal(fetchCalls.length, 0, 'should not have sent a new-device alert for a known device');
+    assert.ok(!db.calls.some(c => c.op === 'run' && /INSERT INTO known_devices/.test(c.sql)));
+    const update = db.calls.find(c => c.op === 'run' && /UPDATE known_devices SET last_seen_at/.test(c.sql));
+    assert.ok(update, 'expected the existing row\'s last_seen_at to be refreshed');
+    // The same device_id cookie value is echoed back, not replaced.
+    const cookies = res.headers.getSetCookie();
+    assert.ok(cookies.some(c => c.startsWith('device_id=some-previously-issued-token')));
+  });
+
+  test('should not attempt an email on a new device when the account has no confirmed email', async (t) => {
+    const fetchCalls = [];
+    t.mock.method(global, 'fetch', async (...args) => { fetchCalls.push(args); return { ok: true, json: async () => ({}) }; });
+    const hash = await hashPassword('correct-password');
+    const db = mockLoginDB(
+      { alice: { ...ALICE, password_hash: hash } },
+      { hasConfirmedEmail: false, isKnownDevice: false },
+    );
+    const res = await post(
+      { username: 'alice', password: 'correct-password' },
+      db,
+      { env: { RESEND_API_KEY: 'test-key' } },
+    );
+    assert.equal(res.status, 200);
+    assert.equal(fetchCalls.length, 0);
+    // Still recorded as known going forward, even without an alert sent.
+    assert.ok(db.calls.some(c => c.op === 'run' && /INSERT INTO known_devices/.test(c.sql)));
+  });
+
+  test('should not attempt an email on a new device when RESEND_API_KEY is unset', async (t) => {
+    const fetchCalls = [];
+    t.mock.method(global, 'fetch', async (...args) => { fetchCalls.push(args); return { ok: true, json: async () => ({}) }; });
+    const hash = await hashPassword('correct-password');
+    const db = mockLoginDB(
+      { alice: { ...ALICE, password_hash: hash } },
+      { hasConfirmedEmail: true, isKnownDevice: false },
+    );
+    const res = await post({ username: 'alice', password: 'correct-password' }, db);
+    assert.equal(res.status, 200);
+    assert.equal(fetchCalls.length, 0);
   });
 });
 
@@ -3146,6 +3311,22 @@ describe('Audit log instrumentation', () => {
     assert.ok(auditIdx >= 0);
     assert.equal(batchCall.bindings[auditIdx][2], 'user.delete');
     assert.equal(batchCall.bindings[auditIdx][3], 'bob');
+  });
+
+  test('DELETE /api/admin/users/:id should also cascade-delete known_devices rows', async () => {
+    const db = mockAuditActionDB({
+      first: [[/SELECT username, role FROM users WHERE id = \?/, { username: 'bob', role: 'member' }]],
+    });
+    const cookie = await sessionCookieFor({ sub: 1, username: 'admin1', role: 'admin' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/admin/users/2', { method: 'DELETE', headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 200);
+    const batchCall = db.calls.find(c => c.op === 'batch');
+    const idx = batchCall.sqls.findIndex(sql => /DELETE FROM known_devices WHERE user_id = \?/.test(sql));
+    assert.ok(idx >= 0);
+    assert.equal(batchCall.bindings[idx][0], 2);
   });
 
   test('DELETE /api/admin/users/:id should unassign (not block on) Kanban cards where the user is only the assignee', async () => {
