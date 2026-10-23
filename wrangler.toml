@@ -50,3 +50,12 @@ DISCORD_CLIENT_ID = "1547010558862037124"
 # Hourly cleanup of expired room-code rate-limit rows (see scheduled() in worker.js)
 [triggers]
 crons = ["0 * * * *"]
+
+# Workers Logs — free on both Free/Paid plans at this site's traffic volume
+# (200k events/day on Free). Captures console.log/error + request metadata
+# so prod errors are visible after the fact instead of only during a manual
+# `wrangler tail` session. Checked before enabling: no src/ console.error
+# call logs a token/password/full request body, only err.message or static
+# strings — see CLAUDE.md if adding a new one.
+[observability]
+enabled = true

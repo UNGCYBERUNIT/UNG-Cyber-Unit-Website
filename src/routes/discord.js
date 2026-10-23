@@ -75,7 +75,7 @@ export async function handleDiscordRoutes(request, env, url, path, secureCookie)
       if (!meRes.ok) throw new Error(`fetching discord identity failed: ${meRes.status}`);
       discordUser = await meRes.json();
     } catch (err) {
-      console.error('Discord OAuth exchange failed:', err);
+      console.error('Discord OAuth exchange failed:', err.message);
       return Response.redirect(`${url.origin}/profile?discord=error`, 302);
     }
 
@@ -87,7 +87,7 @@ export async function handleDiscordRoutes(request, env, url, path, secureCookie)
       // Most likely the partial-unique-index rejecting a discord_id already
       // claimed by a different account — a clear, specific redirect state
       // beats a raw 500 for something a member can actually understand.
-      console.error('Discord link DB update failed:', err);
+      console.error('Discord link DB update failed:', err.message);
       return Response.redirect(`${url.origin}/profile?discord=duplicate`, 302);
     }
 
