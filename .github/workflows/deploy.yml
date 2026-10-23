@@ -13,6 +13,7 @@ jobs:
         with:
           node-version: '24'
       - run: npm ci
+      - run: npm run lint
       - run: npm test
       - name: Deploy Worker + assets
         uses: cloudflare/wrangler-action@v3
@@ -21,7 +22,9 @@ jobs:
           # Pin wrangler to match local dev and be explicit about the command so
           # the Worker *script* is always deployed (not just assets). If the API
           # token lacks "Workers Scripts: Edit" this step fails loudly here.
-          wranglerVersion: '4.145.0'
+          # Dependabot bumps the devDependency in package.json but can't see
+          # this string literal — when it opens a wrangler PR, bump this to match.
+          wranglerVersion: '4.152.0'
           command: deploy
       - name: Verify the deployed Worker is live
         run: |

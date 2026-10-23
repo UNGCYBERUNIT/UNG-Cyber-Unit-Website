@@ -5,7 +5,8 @@
   "main": "worker.js",
   "scripts": {
     "start": "wrangler dev",
-    "test": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON"
+    "test": "node --test --disable-warning=MODULE_TYPELESS_PACKAGE_JSON",
+    "lint": "eslint ."
   },
   "keywords": [
     "cybersecurity",
@@ -15,6 +16,9 @@
   "author": "",
   "license": "MIT",
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.13.0",
+    "globals": "^17.13.0",
     "wrangler": "^4.152.0"
   }
 }

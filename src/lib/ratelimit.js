@@ -1,5 +1,5 @@
 // ─── Rate Limiting ────────────────────────────────────────────────────────────
-// Six sliding-window check/record pairs, one per abuse surface. Each `check*`
+// Seven sliding-window check/record pairs, one per abuse surface. Each `check*`
 // returns a 429 Response when the caller is over the limit (otherwise null);
 // each `record*` inserts a row and opportunistically prunes expired ones so
 // its backing table stays small. All D1-backed except the webexploit pair,

@@ -399,7 +399,6 @@ function initHygieneChecklist() {
   if (!list) return;
 
   const STORAGE_KEY = 'cyberunit-hygiene';
-  const total = list.querySelectorAll('li').length;
 
   // Load saved state
   let checked = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
@@ -529,9 +528,6 @@ function initScrollSpy() {
   const links = toc.querySelectorAll('.toc-link[data-target]');
   if (!links.length) return;
 
-  // Track which section is most visible
-  let activeId = null;
-
   const observer = new IntersectionObserver((entries) => {
     entries.forEach(entry => {
       const link = toc.querySelector(`.toc-link[data-target="${entry.target.id}"]`);
@@ -541,7 +537,6 @@ function initScrollSpy() {
         // Deactivate all, activate this one
         links.forEach(l => l.classList.remove('active'));
         link.classList.add('active');
-        activeId = entry.target.id;
 
         // Keep active link scrolled into view inside the TOC
         if (window.innerWidth >= 1100) {
