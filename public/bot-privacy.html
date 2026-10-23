@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex">
+  <title>CyberUnit @ UNG — Bot Privacy Policy</title>
+  <link rel="icon" href="/favicon.ico" type="image/x-icon">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+  <!-- ─── Navbar ──────────────────────────────────────────── -->
+  <nav class="navbar" role="navigation" aria-label="Main navigation">
+    <div class="container">
+      <a href="/" class="navbar-logo"><img src="/images/CyberUnitLogo_Transparent.png" alt="CyberUnit @ UNG" class="navbar-logo-img"><span class="navbar-logo-text">[ CyberUnit @ UNG ]</span></a>
+      <button class="hamburger" id="hamburger" aria-label="Toggle navigation" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
+      <ul class="navbar-links" id="navLinks">
+        <li><a href="/">Home</a></li>
+        <li><a href="/about">About</a></li>
+        <li><a href="https://discord.gg/BjU632E7sV" target="_blank" rel="noopener noreferrer" class="btn btn-sm navbar-discord-btn">Discord</a></li>
+        <li id="authNavItem"></li>
+      </ul>
+    </div>
+  </nav>
+
+  <main class="page-body">
+    <div class="container" style="max-width: 700px; padding: 2rem 1rem;">
+
+      <header style="margin-bottom: 2rem;">
+        <h1>// Discord Bot — Privacy Policy</h1>
+        <p style="color: var(--text-muted); font-family: 'Share Tech Mono', monospace; font-size: 0.85rem; margin: 0.4rem 0 0;">
+          Last updated October 2026. Applies to the "CyberUnit @ UNG" Discord bot.
+        </p>
+      </header>
+
+      <section class="instructor-section">
+        <h2 class="instructor-section-heading">// What we collect</h2>
+        <p>When you link your Discord account (via Discord's own OAuth sign-in, requesting only the
+        <code>identify</code> scope), we receive and store exactly two pieces of Discord-provided
+        information on your website account:</p>
+        <ul style="margin-bottom: 1rem;">
+          <li>Your Discord user ID</li>
+          <li>Your Discord username (as of when you linked)</li>
+        </ul>
+        <p>We do not request, receive, or store your email address, your list of servers, your
+        presence/activity status, or anything else Discord's <code>identify</code> scope doesn't
+        provide.</p>
+      </section>
+
+      <section class="instructor-section">
+        <h2 class="instructor-section-heading">// What we don't collect</h2>
+        <p>The bot does not read, log, or store the content of any message, direct message, or
+        voice channel. It does not scan server membership or roles beyond what's needed to check
+        permissions where relevant.</p>
+      </section>
+
+      <section class="instructor-section">
+        <h2 class="instructor-section-heading">// How we use it</h2>
+        <ul style="margin-bottom: 1rem;">
+          <li>To match a bot command (like a progress-lookup) to the right website account.</li>
+          <li>To show that account's already-public-to-them progress info (module/streak stats,
+            earned badges, leaderboard rank) back through the bot.</li>
+          <li>To @-mention you by Discord ID in a staff-only Kanban-board notification channel, if
+            you're an instructor/admin account and a card gets assigned to you.</li>
+        </ul>
+        <p>Your Discord ID and username are never shown to other members through the website
+        itself — Discord-link status is visible only to you, on your own profile page.</p>
+      </section>
+
+      <section class="instructor-section">
+        <h2 class="instructor-section-heading">// Sharing</h2>
+        <p>We don't sell or share this information with third parties for advertising or any other
+        purpose. It's used only within this website and bot. Our infrastructure providers — Cloudflare
+        (hosting, database) and Discord itself (for the account-linking exchange and bot messages) —
+        process it only as needed to run the service, under their own respective terms.</p>
+      </section>
+
+      <section class="instructor-section">
+        <h2 class="instructor-section-heading">// Retention &amp; your choices</h2>
+        <p>Linked Discord info is kept only as long as your account stays linked. You can unlink at
+        any time from your website profile — this immediately and permanently deletes your stored
+        Discord ID, username, and link date from our database. Deleting your website account
+        entirely removes the same information along with everything else tied to that account.</p>
+      </section>
+
+      <section class="instructor-section">
+        <h2 class="instructor-section-heading">// Children's privacy</h2>
+        <p>This service isn't directed at children, and relies on Discord's own minimum age
+        requirements for anyone using Discord at all.</p>
+      </section>
+
+      <section class="instructor-section">
+        <h2 class="instructor-section-heading">// Changes to this policy</h2>
+        <p>We may update this policy as the bot changes. The "last updated" date above reflects the
+        most recent revision.</p>
+      </section>
+
+      <section class="instructor-section">
+        <h2 class="instructor-section-heading">// Contact</h2>
+        <p>Questions, or to request deletion of linked Discord data: <a href="mailto:commander@ungcyberunit.org">commander@ungcyberunit.org</a>.</p>
+        <p>See also our <a href="/bot-terms">Bot Terms of Service</a>.</p>
+      </section>
+
+    </div>
+  </main>
+
+  <script type="module" src="/js/main.js"></script>
+</body>
+</html>
