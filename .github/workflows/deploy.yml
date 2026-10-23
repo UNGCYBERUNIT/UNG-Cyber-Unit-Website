@@ -16,7 +16,7 @@ jobs:
       - run: npm run lint
       - run: npm test
       - name: Deploy Worker + assets
-        uses: cloudflare/wrangler-action@v3
+        uses: cloudflare/wrangler-action@v4
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           # Pin wrangler to match local dev and be explicit about the command so
