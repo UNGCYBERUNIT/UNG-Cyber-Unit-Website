@@ -16,10 +16,12 @@ content data) lives under **`src/`**:
   (password hashing, JWT sign/verify, session/role helpers,
   authActionPageResponse, checkBotSecret), `lab-auth.js` (the Web
   Exploitation Lab's intentionally-forgeable tokens — kept isolated from
-  `auth.js` on purpose, see that section below), `ratelimit.js` (all six
-  check/record rate-limit pairs), `email.js` (sendResendEmail), `audit.js`
-  (logAudit), `util.js` (date/streak math, room codes, CSV/JSON question
-  parsing, leaderboardRank).
+  `auth.js` on purpose, see that section below), `ratelimit.js` (all eight
+  check/record rate-limit pairs), `email.js` (sendResendEmail), `discord.js`
+  (sendDiscordMessage — posts into a fixed channel via the Discord Bot REST
+  API, distinct from `src/routes/discord.js`'s OAuth-pairing/bot-pull-API
+  routes), `audit.js` (logAudit), `util.js` (date/streak math, room codes,
+  CSV/JSON question parsing, leaderboardRank, summarizeUserAgent).
 - `src/data/topics.js` / `src/data/challenges.js` — the `topics[]` /
   `ctfModules[]` content arrays plus their render helpers (topicCard,
   homeTopicCards, pathwayHtml, challengeCard, etc.).
@@ -196,23 +198,42 @@ a new `assigned_to`'s role server-side (`assigneeIsInstructorPlus()`) rather tha
 picker dropdown — a direct API call can't assign a member/student/guest id that was never
 offered in the UI. An already-assigned user whose role later drops below instructor isn't
 retroactively unassigned or re-validated on unrelated edits to that card — the check only
-runs when `assigned_to` is actually changing. **Assignment notifications are email-only** — reuses
-`sendResendEmail()` exactly like `verify-email`/`forgot-password` do, silently no-ops if the
-assignee has no verified `users.email` or `RESEND_API_KEY` isn't set. There is **no real push-
-notification infrastructure in this app** (no service worker, no VAPID keys) — don't add one
-casually for this or any future feature; it's a meaningfully bigger lift than it looks (new
+runs when `assigned_to` is actually changing. **Assignment notifications go out on two
+independent channels** — email (reuses `sendResendEmail()` exactly like `verify-email`/
+`forgot-password` do, silently no-ops if the assignee has no verified `users.email` or
+`RESEND_API_KEY` isn't set) and a Discord channel post (`sendDiscordMessage()` in
+`src/lib/discord.js`, via `notifyAssigneeOnDiscord()` in `src/routes/kanban.js` — a direct call
+to Discord's Bot REST API using the `DISCORD_TOKEN` secret, the same bot token
+`cyber_discord_bot` already uses for its gateway connection, so the message really does appear
+as sent by the bot rather than a separate webhook integration). The two channels are gated and
+attempted independently — a deployment with only one configured (or neither) still works, same
+as today. The Discord post `@`-mentions the assignee's linked `users.discord_id` when one's on
+file (`<@discord_id>`, scoped via Discord's `allowed_mentions.users` so an `@everyone`/role
+mention accidentally sitting in a card's title — instructor-authored, not fully untrusted —
+can never actually ping anyone); an assignee with no linked Discord account is still named by
+site username in the post, with a nudge to link one via `/profile`'s "Link Discord" button
+(there's no slash-command equivalent for linking — only that OAuth flow). There is **no real
+push-notification infrastructure in this app** (no service worker, no VAPID keys) — don't add
+one casually for this or any future feature; it's a meaningfully bigger lift than it looks (new
 service worker, subscription lifecycle, payload encryption) and wasn't what "push notification"
-turned out to mean here. **Due-date reminder emails** (`sendKanbanDueDateReminders()` in
+turned out to mean here; the Discord channel post above is a distinct, simpler mechanism, not a
+step toward that. **Due-date reminder emails** (`sendKanbanDueDateReminders()` in
 `src/routes/kanban.js`, called from `worker.js`'s existing hourly `scheduled()` cron) are a
-separate notification from the assignment email above — one-shot per card, tracked by
-`kanban_items.due_reminder_sent_at` (schema.sql): a card's assignee gets exactly one reminder
-once its `due_date` falls within 24h (including cards already overdue, so a cron outage or a
-newly-added due date on an old card still gets caught), and never a second one for that same
-due date. The PATCH handler resets `due_reminder_sent_at` back to `NULL` whenever `due_date` or
-`assigned_to` actually changes, so a pushed-out deadline or a reassignment is eligible for a
-fresh reminder rather than being treated as already handled. Same `RESEND_API_KEY`/verified-
-email guard as the assignment notification; no per-row emails fire from CSV import for the same
-mail-bomb reason. The due-date calendar view on `/kanban` reads the same
+separate notification from the assignment notification above, now carrying the same email +
+Discord dual-channel split — one-shot per card, tracked by `kanban_items.due_reminder_sent_at`
+(schema.sql): a card's assignee gets exactly one reminder once its `due_date` falls within 24h
+(including cards already overdue, so a cron outage or a newly-added due date on an old card
+still gets caught), and never a second one for that same due date. `due_reminder_sent_at` is
+only set once at least one configured channel actually reached the assignee that tick (not
+merely "a channel was configured") — an email-configured assignee with zero verified addresses
+on file still retries every tick until either they link one or Discord is configured and
+reaches them instead; a failed Discord send is independent/best-effort and never blocks marking
+the card done, since (unlike email) there's nothing dated for it to retry against. The PATCH
+handler resets `due_reminder_sent_at` back to `NULL` whenever `due_date` or `assigned_to`
+actually changes, so a pushed-out deadline or a reassignment is eligible for a fresh reminder
+rather than being treated as already handled. No per-row emails *or* Discord posts fire from
+CSV import, for the same mail-bomb/channel-spam reason. The due-date calendar view on `/kanban`
+reads the same
 already-fetched item list client-side — it is **not** synced with the public `/events` table;
 those are different audiences (internal planning deadline vs. club-wide event), and auto-
 syncing them would violate the "snapshot, not live reference" principle used elsewhere in this

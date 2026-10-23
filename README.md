@@ -119,10 +119,11 @@ cybersec-basics/
 │   │   ├── render.js            # Re-exports escapeHtml/renderContent/getTopicSVG from public/js/topic-render.js — the one place src/ crosses into public/js
 │   │   ├── auth.js             # Password hashing, JWT sign/verify, session/role helpers, authActionPageResponse, checkBotSecret
 │   │   ├── lab-auth.js          # Web Exploitation Lab's intentionally-forgeable "Remember Me" tokens — isolated from auth.js on purpose
-│   │   ├── ratelimit.js         # All six check/record sliding-window rate-limit pairs
+│   │   ├── ratelimit.js         # All eight check/record sliding-window rate-limit pairs
 │   │   ├── email.js            # sendResendEmail
+│   │   ├── discord.js          # sendDiscordMessage — posts into a fixed channel via the Discord Bot REST API
 │   │   ├── audit.js            # logAudit
-│   │   └── util.js             # Date/streak math, room codes, CSV/JSON question parsing, leaderboardRank
+│   │   └── util.js             # Date/streak math, room codes, CSV/JSON question parsing, leaderboardRank, summarizeUserAgent
 │   ├── data/
 │   │   ├── topics.js           # `topics[]` content array, pathway data, topicFraming, and their render helpers (topicCard, homeTopicCards, pathwayHtml, topicMetaTags)
 │   │   └── challenges.js       # `ctfModules[]` content array and its render helpers (challengeCard, renderChallengeModule, challengesHubCards, etc.)

@@ -4356,7 +4356,11 @@ describe('GET /api/kanban/items', () => {
 // A mock D1 for the assignee-role check: resolves `SELECT role FROM users
 // WHERE id = ?` from a fixed id->role map, independent of everything else
 // (session role lookups, inserts) which behave like the plain mockDB().
-function mockKanbanAssigneeRoleDB(roleById) {
+// `usersById` optionally supplies {username, discord_id} for
+// notifyAssigneeOnDiscord()'s `SELECT username, discord_id FROM users
+// WHERE id = ?` lookup — distinct from roleById above since that's a
+// different column list against the same table.
+function mockKanbanAssigneeRoleDB(roleById, usersById = {}) {
   const calls = [];
   const exec = (sql, bindings) => ({
     sql, bindings,
@@ -4365,6 +4369,7 @@ function mockKanbanAssigneeRoleDB(roleById) {
       calls.push({ sql, bindings, op: 'first' });
       if (/SELECT token_version FROM users WHERE id = \?/.test(sql)) return { token_version: 0 };
       if (/SELECT role FROM users WHERE id = \?/.test(sql)) return roleById[bindings[0]] ? { role: roleById[bindings[0]] } : null;
+      if (/SELECT username, discord_id FROM users WHERE id = \?/.test(sql)) return usersById[bindings[0]] ?? null;
       if (/SELECT \* FROM kanban_items WHERE id = \?/.test(sql)) return { id: 5, title: 'x', description: '', item_type: 'task', status: 'idea', priority: 'medium', sort_order: 0, parent_id: null, assigned_to: null, due_date: null, created_by: 1, created_at: 1000 };
       return null;
     },
@@ -4469,6 +4474,88 @@ describe('POST /api/kanban/items', () => {
       { JWT_SECRET: SECRET, DB: db },
     );
     assert.equal(res.status, 201);
+  });
+
+  test('should ping the assignee\'s linked Discord account on assignment, scoped via allowed_mentions', async (t) => {
+    const fetchCalls = [];
+    t.mock.method(global, 'fetch', async (input, opts) => { fetchCalls.push({ input, opts }); return { ok: true, json: async () => ({}) }; });
+    const db = mockKanbanAssigneeRoleDB({ 7: 'instructor' }, { 7: { username: 'bob', discord_id: '999888777' } });
+    const cookie = await sessionCookieFor({ sub: 1, username: 'inst', role: 'instructor' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/kanban/items', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Cookie: cookie },
+        body: JSON.stringify({ title: 'Card', assigned_to: 7 }),
+      }),
+      { JWT_SECRET: SECRET, DB: db, DISCORD_TOKEN: 'bot-token', DISCORD_NOTIFICATIONS_CHANNEL_ID: '555' },
+    );
+    assert.equal(res.status, 201);
+    assert.equal(fetchCalls.length, 1);
+    assert.equal(fetchCalls[0].input, 'https://discord.com/api/v10/channels/555/messages');
+    assert.equal(fetchCalls[0].opts.headers.Authorization, 'Bot bot-token');
+    const body = JSON.parse(fetchCalls[0].opts.body);
+    assert.match(body.content, /<@999888777>/);
+    assert.match(body.content, /Card/);
+    // allowed_mentions restricts the ping to exactly this user — never a
+    // blanket parse that would let an @everyone/@here in the card title
+    // (instructor-authored, not fully untrusted) actually notify anyone.
+    assert.deepEqual(body.allowed_mentions, { parse: [], users: ['999888777'] });
+  });
+
+  test('should name an unlinked assignee by username (no ping) and nudge them to link Discord', async (t) => {
+    const fetchCalls = [];
+    t.mock.method(global, 'fetch', async (input, opts) => { fetchCalls.push({ input, opts }); return { ok: true, json: async () => ({}) }; });
+    const db = mockKanbanAssigneeRoleDB({ 7: 'instructor' }, { 7: { username: 'bob', discord_id: null } });
+    const cookie = await sessionCookieFor({ sub: 1, username: 'inst', role: 'instructor' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/kanban/items', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Cookie: cookie },
+        body: JSON.stringify({ title: 'Card', assigned_to: 7 }),
+      }),
+      { JWT_SECRET: SECRET, DB: db, DISCORD_TOKEN: 'bot-token', DISCORD_NOTIFICATIONS_CHANNEL_ID: '555' },
+    );
+    assert.equal(res.status, 201);
+    assert.equal(fetchCalls.length, 1);
+    const body = JSON.parse(fetchCalls[0].opts.body);
+    assert.match(body.content, /\*\*bob\*\*/);
+    assert.match(body.content, /link your account/);
+    assert.doesNotMatch(body.content, /<@/);
+    assert.deepEqual(body.allowed_mentions, { parse: [], users: [] });
+  });
+
+  test('should still post to Discord when RESEND_API_KEY is unset (independent channels)', async (t) => {
+    const fetchCalls = [];
+    t.mock.method(global, 'fetch', async (input, opts) => { fetchCalls.push({ input, opts }); return { ok: true, json: async () => ({}) }; });
+    const db = mockKanbanAssigneeRoleDB({ 7: 'instructor' }, { 7: { username: 'bob', discord_id: '999888777' } });
+    const cookie = await sessionCookieFor({ sub: 1, username: 'inst', role: 'instructor' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/kanban/items', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Cookie: cookie },
+        body: JSON.stringify({ title: 'Card', assigned_to: 7 }),
+      }),
+      { JWT_SECRET: SECRET, DB: db, RESEND_API_KEY: undefined, DISCORD_TOKEN: 'bot-token', DISCORD_NOTIFICATIONS_CHANNEL_ID: '555' },
+    );
+    assert.equal(res.status, 201);
+    assert.equal(fetchCalls.length, 1, 'Discord should fire even with no email provider configured');
+  });
+
+  test('should not attempt Discord when neither DISCORD_TOKEN nor the channel id is configured', async (t) => {
+    const fetchCalls = [];
+    t.mock.method(global, 'fetch', async (...args) => { fetchCalls.push(args); return { ok: true, json: async () => ({}) }; });
+    const db = mockKanbanAssigneeRoleDB({ 7: 'instructor' }, { 7: { username: 'bob', discord_id: '999888777' } });
+    const cookie = await sessionCookieFor({ sub: 1, username: 'inst', role: 'instructor' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/kanban/items', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Cookie: cookie },
+        body: JSON.stringify({ title: 'Card', assigned_to: 7 }),
+      }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    assert.equal(res.status, 201);
+    assert.equal(fetchCalls.length, 0);
   });
 });
 
@@ -4597,7 +4684,7 @@ describe('DELETE /api/kanban/items/:id', () => {
 });
 
 describe('sendKanbanDueDateReminders (worker.js scheduled() cron)', () => {
-  test('should no-op when RESEND_API_KEY is unset', async () => {
+  test('should no-op when neither RESEND_API_KEY nor Discord notifications are configured', async () => {
     const db = mockDB();
     await sendKanbanDueDateReminders({ DB: db, RESEND_API_KEY: undefined });
     assert.equal(db.calls.length, 0);
@@ -4671,6 +4758,82 @@ describe('sendKanbanDueDateReminders (worker.js scheduled() cron)', () => {
       globalThis.fetch = originalFetch;
     }
     assert.equal(fetchCalled, false);
+  });
+
+  // A mock supporting both the due-cards .all() query and the
+  // username/discord_id .first() lookup notifyAssigneeOnDiscord() needs —
+  // the two existing mocks above never defined .first() because Discord
+  // wasn't configured in either, so it was never reached.
+  function mockDueReminderWithUserLookupDB({ dueCards, emailRows = [], usersById = {} }) {
+    const calls = [];
+    return {
+      calls,
+      prepare(sql) {
+        return {
+          bind: (...bindings) => ({
+            all: async () => {
+              calls.push({ sql, bindings, op: 'all' });
+              if (/SELECT k\.id, k\.title, k\.due_date, k\.assigned_to/.test(sql)) return { results: dueCards };
+              if (/SELECT email FROM user_emails WHERE user_id = \? AND email IS NOT NULL/.test(sql)) return { results: emailRows };
+              return { results: [] };
+            },
+            first: async () => {
+              calls.push({ sql, bindings, op: 'first' });
+              if (/SELECT username, discord_id FROM users WHERE id = \?/.test(sql)) return usersById[bindings[0]] ?? null;
+              return null;
+            },
+            run: async () => { calls.push({ sql, bindings, op: 'run' }); return { meta: { changes: 1 } }; },
+          }),
+        };
+      },
+    };
+  }
+
+  test('should ping Discord and mark due_reminder_sent_at even when RESEND_API_KEY is unset', async (t) => {
+    const fetchCalls = [];
+    t.mock.method(global, 'fetch', async (input, opts) => { fetchCalls.push({ input, opts }); return { ok: true, json: async () => ({}) }; });
+    const db = mockDueReminderWithUserLookupDB({
+      dueCards: [{ id: 42, title: 'Finish report', due_date: 1700000000, assigned_to: 7 }],
+      usersById: { 7: { username: 'bob', discord_id: '999888777' } },
+    });
+    await sendKanbanDueDateReminders({ DB: db, RESEND_API_KEY: undefined, DISCORD_TOKEN: 'bot-token', DISCORD_NOTIFICATIONS_CHANNEL_ID: '555' });
+
+    assert.equal(fetchCalls.length, 1);
+    const body = JSON.parse(fetchCalls[0].opts.body);
+    assert.match(body.content, /<@999888777>/);
+    assert.match(body.content, /Finish report/);
+
+    const updateCall = db.calls.find(c => c.op === 'run' && /UPDATE kanban_items SET due_reminder_sent_at/.test(c.sql));
+    assert.ok(updateCall, 'Discord reaching the assignee should be enough to mark the reminder done, even with no email channel');
+  });
+
+  test('should mark due_reminder_sent_at when email has zero recipients but Discord still reaches the assignee', async (t) => {
+    // Regression guard: a naive implementation could mark the card "done"
+    // for an email-configured-but-zero-recipients assignee even when
+    // nothing was actually sent anywhere. notifiedSomehow must come from
+    // an actual channel reaching them, not from a channel merely being
+    // configured.
+    t.mock.method(global, 'fetch', async () => ({ ok: true, json: async () => ({}) }));
+    const db = mockDueReminderWithUserLookupDB({
+      dueCards: [{ id: 42, title: 'No linked email', due_date: 1700000000, assigned_to: 7 }],
+      emailRows: [], // zero verified emails for this assignee
+      usersById: { 7: { username: 'bob', discord_id: '999888777' } },
+    });
+    await sendKanbanDueDateReminders({ DB: db, RESEND_API_KEY: 'test-key', DISCORD_TOKEN: 'bot-token', DISCORD_NOTIFICATIONS_CHANNEL_ID: '555' });
+
+    const updateCall = db.calls.find(c => c.op === 'run' && /UPDATE kanban_items SET due_reminder_sent_at/.test(c.sql));
+    assert.ok(updateCall, 'Discord successfully reached the assignee, so the reminder should be marked done');
+  });
+
+  test('should NOT mark due_reminder_sent_at when email has zero recipients and Discord is not configured (retries next tick)', async () => {
+    const db = mockDueReminderWithUserLookupDB({
+      dueCards: [{ id: 42, title: 'No linked email, no Discord', due_date: 1700000000, assigned_to: 7 }],
+      emailRows: [],
+    });
+    await sendKanbanDueDateReminders({ DB: db, RESEND_API_KEY: 'test-key' });
+
+    const updateCall = db.calls.find(c => c.op === 'run' && /UPDATE kanban_items SET due_reminder_sent_at/.test(c.sql));
+    assert.equal(updateCall, undefined, 'nothing reached the assignee through any channel, so the flag must stay NULL for a retry');
   });
 });
 

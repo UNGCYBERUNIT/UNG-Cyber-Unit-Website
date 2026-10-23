@@ -2,6 +2,7 @@ import { jsonResponse } from '../lib/http.js';
 import { requireRole } from '../lib/auth.js';
 import { logAudit } from '../lib/audit.js';
 import { sendResendEmail } from '../lib/email.js';
+import { sendDiscordMessage } from '../lib/discord.js';
 import { parseCSVLine } from '../lib/util.js';
 
 // Kanban Board (Jira replacement, see docs/plan-kanban-board.md). One
@@ -109,23 +110,60 @@ async function assigneeIsInstructorPlus(env, userId) {
 }
 
 async function notifyAssignee(env, { assignedTo, title, id }) {
-  if (!assignedTo || !env.RESEND_API_KEY) return;
+  if (!assignedTo) return;
+
   // An account can have up to 3 linked emails (user_emails in schema.sql,
   // see CLAUDE.md) — notify every verified one, not just a "primary", so
   // there's nothing extra to pick/manage here.
-  const { results } = await env.DB.prepare('SELECT email FROM user_emails WHERE user_id = ? AND email IS NOT NULL').bind(assignedTo).all();
-  const recipients = (results ?? []).map(r => r.email);
-  if (recipients.length === 0) return;
+  if (env.RESEND_API_KEY) {
+    const { results } = await env.DB.prepare('SELECT email FROM user_emails WHERE user_id = ? AND email IS NOT NULL').bind(assignedTo).all();
+    const recipients = (results ?? []).map(r => r.email);
+    if (recipients.length > 0) {
+      try {
+        await sendResendEmail(env, {
+          from: KANBAN_FROM,
+          to: recipients,
+          subject: `You were assigned a Kanban card — ${title}`,
+          text: `You were assigned to "${title}" on the Cyber Unit Kanban board.\n\nView it: ${env.SITE_ORIGIN ?? 'https://ungcyberunit.org'}/kanban`,
+          html: `<p>You were assigned to <strong>${title}</strong> on the Cyber Unit Kanban board.</p><p><a href="${env.SITE_ORIGIN ?? 'https://ungcyberunit.org'}/kanban">View the board</a></p>`,
+        });
+      } catch (err) {
+        console.error('kanban assignment notification failed', err.message);
+      }
+    }
+  }
+
+  // Independent of (and not gated by) the email above — a Discord-less or
+  // email-less deployment still gets whichever channel it has configured.
+  // See src/lib/discord.js. assigneeIsInstructorPlus() already guarantees
+  // assignedTo always resolves to a real row, so no null-row guard needed.
+  if (env.DISCORD_TOKEN && env.DISCORD_NOTIFICATIONS_CHANNEL_ID) {
+    await notifyAssigneeOnDiscord(env, assignedTo, `assigned a Kanban card: **${title}**`);
+  }
+}
+
+// Shared by the assignment notification above and the due-date reminder
+// below — pings the assignee's linked Discord account (<@discord_id>) when
+// one's on file; otherwise names them by site username and nudges them to
+// link one via the /profile page's "Link Discord" button (there's no
+// slash-command equivalent — linking only happens through that OAuth flow,
+// see src/routes/discord.js), so the channel post still identifies who it's
+// about even for an unlinked account.
+async function notifyAssigneeOnDiscord(env, assignedTo, actionPhrase) {
+  const user = await env.DB.prepare('SELECT username, discord_id FROM users WHERE id = ?').bind(assignedTo).first();
+  if (!user) return;
+  const siteUrl = env.SITE_ORIGIN ?? 'https://ungcyberunit.org';
+  const who = user.discord_id
+    ? `<@${user.discord_id}>`
+    : `**${user.username}** (link your account on the site at ${siteUrl}/profile to get pinged directly)`;
   try {
-    await sendResendEmail(env, {
-      from: KANBAN_FROM,
-      to: recipients,
-      subject: `You were assigned a Kanban card — ${title}`,
-      text: `You were assigned to "${title}" on the Cyber Unit Kanban board.\n\nView it: ${env.SITE_ORIGIN ?? 'https://ungcyberunit.org'}/kanban`,
-      html: `<p>You were assigned to <strong>${title}</strong> on the Cyber Unit Kanban board.</p><p><a href="${env.SITE_ORIGIN ?? 'https://ungcyberunit.org'}/kanban">View the board</a></p>`,
-    });
+    await sendDiscordMessage(
+      env,
+      `${who} was ${actionPhrase}\n${siteUrl}/kanban`,
+      { allowedUserIds: user.discord_id ? [user.discord_id] : [] },
+    );
   } catch (err) {
-    console.error('kanban assignment notification failed', err.message);
+    console.error('kanban discord notification failed', err.message);
   }
 }
 
@@ -138,7 +176,12 @@ async function notifyAssignee(env, { assignedTo, title, id }) {
 // in the past) rather than requiring exact timing, so a cron outage or a
 // freshly-added due date on an old card still gets exactly one reminder.
 export async function sendKanbanDueDateReminders(env) {
-  if (!env.DB || !env.RESEND_API_KEY) return;
+  const discordConfigured = !!(env.DISCORD_TOKEN && env.DISCORD_NOTIFICATIONS_CHANNEL_ID);
+  // Preserves the original no-op-until-configured behavior, generalized
+  // across both channels: if NEITHER is set up, there's nothing to do and
+  // nothing to query for — same as the original `!env.RESEND_API_KEY`
+  // short-circuit, before Discord existed as an alternative.
+  if (!env.DB || (!env.RESEND_API_KEY && !discordConfigured)) return;
   const cutoff = Math.floor(Date.now() / 1000) + 24 * 60 * 60;
   const { results } = await env.DB.prepare(`
     SELECT k.id, k.title, k.due_date, k.assigned_to
@@ -151,24 +194,45 @@ export async function sendKanbanDueDateReminders(env) {
   `).bind(cutoff).all();
 
   for (const row of results) {
-    // Up to 3 linked emails per account (see notifyAssignee() above) —
-    // notify every verified one.
-    const { results: emailRows } = await env.DB.prepare('SELECT email FROM user_emails WHERE user_id = ? AND email IS NOT NULL').bind(row.assigned_to).all();
-    const recipients = (emailRows ?? []).map(r => r.email);
-    if (recipients.length === 0) continue;
     const dueStr = new Date(row.due_date * 1000).toLocaleDateString('en-US', { timeZone: 'UTC', month: 'long', day: 'numeric', year: 'numeric' });
-    try {
-      await sendResendEmail(env, {
-        from: KANBAN_FROM,
-        to: recipients,
-        subject: `Kanban card due soon — ${row.title}`,
-        text: `"${row.title}" is due ${dueStr} on the Cyber Unit Kanban board.\n\nView it: ${env.SITE_ORIGIN ?? 'https://ungcyberunit.org'}/kanban`,
-        html: `<p><strong>${row.title}</strong> is due ${dueStr} on the Cyber Unit Kanban board.</p><p><a href="${env.SITE_ORIGIN ?? 'https://ungcyberunit.org'}/kanban">View the board</a></p>`,
-      });
-    } catch (err) {
-      console.error('kanban due-date reminder failed', err.message);
-      continue; // leave due_reminder_sent_at NULL so the next cron tick retries
+
+    // notifiedSomehow tracks whether this row actually reached a channel —
+    // distinct from "a channel is configured," since a configured email
+    // channel with zero verified recipients reaches no one. Only the email
+    // side keeps the original retry-next-tick-on-failure behavior (the one
+    // channel this flag originally existed to protect); a failed Discord
+    // send is independent and best-effort (logged inside
+    // notifyAssigneeOnDiscord), and a successful one still counts as
+    // "reached," even for an unlinked assignee (they're still named by
+    // username in the channel post).
+    let notifiedSomehow = false;
+    let emailFailed = false;
+    if (env.RESEND_API_KEY) {
+      const { results: emailRows } = await env.DB.prepare('SELECT email FROM user_emails WHERE user_id = ? AND email IS NOT NULL').bind(row.assigned_to).all();
+      const recipients = (emailRows ?? []).map(r => r.email);
+      if (recipients.length > 0) {
+        try {
+          await sendResendEmail(env, {
+            from: KANBAN_FROM,
+            to: recipients,
+            subject: `Kanban card due soon — ${row.title}`,
+            text: `"${row.title}" is due ${dueStr} on the Cyber Unit Kanban board.\n\nView it: ${env.SITE_ORIGIN ?? 'https://ungcyberunit.org'}/kanban`,
+            html: `<p><strong>${row.title}</strong> is due ${dueStr} on the Cyber Unit Kanban board.</p><p><a href="${env.SITE_ORIGIN ?? 'https://ungcyberunit.org'}/kanban">View the board</a></p>`,
+          });
+          notifiedSomehow = true;
+        } catch (err) {
+          console.error('kanban due-date reminder failed', err.message);
+          emailFailed = true; // leave due_reminder_sent_at NULL so the next cron tick retries the email
+        }
+      }
     }
+
+    if (discordConfigured) {
+      await notifyAssigneeOnDiscord(env, row.assigned_to, `has a Kanban card due soon: **${row.title}** (due ${dueStr})`);
+      notifiedSomehow = true;
+    }
+
+    if (emailFailed || !notifiedSomehow) continue;
     await env.DB.prepare('UPDATE kanban_items SET due_reminder_sent_at = ? WHERE id = ?').bind(Date.now(), row.id).run();
   }
 }
