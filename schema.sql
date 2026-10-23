@@ -254,6 +254,30 @@ CREATE TABLE IF NOT EXISTS known_devices (
   FOREIGN KEY (user_id) REFERENCES users(id)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_known_devices_user_device ON known_devices (user_id, device_token_hash);
+-- Column holds raw, attacker-controlled User-Agent text (nothing escapes
+-- it on write) — fine today since no UI reads it back, but any future
+-- "recent devices" admin/profile view MUST HTML-escape it on render, same
+-- as every other user-controlled string in this app.
+
+-- Sliding-window rate limit for the new-sign-in alert email above, keyed by
+-- user_id rather than IP (unlike every other rate limit table here) —
+-- the attacker's IP is irrelevant to what's being protected: the victim's
+-- inbox and this site's shared Resend send quota. Without this, anyone who
+-- already has valid credentials (phished password, a credential-stuffing
+-- hit, or their own misbehaving script) could trigger unlimited alert
+-- sends just by omitting the device_id cookie on every request — each
+-- one looks "new" to known_devices above, since checkLoginLimit/
+-- recordLoginFailure (ratelimit.js) only throttles FAILED logins, never
+-- successful ones. isNewDeviceAlertLimited()/recordNewDeviceAlert() in
+-- src/lib/ratelimit.js deliberately do NOT 429 the login itself (unlike
+-- every other check*/record* pair) — valid credentials must still log the
+-- caller in; only the side-effect email gets silently skipped past the cap.
+CREATE TABLE IF NOT EXISTS new_device_alert_rate_limit (
+  id      INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL,
+  ts      INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_ndarl_user_ts ON new_device_alert_rate_limit (user_id, ts);
 
 -- Instructor-only answer keys for downloadable challenge sets (see
 -- /log-analysis-challenge). Stored as a D1 blob rather than a public/ static

@@ -1,9 +1,12 @@
 // ─── Rate Limiting ────────────────────────────────────────────────────────────
-// Seven sliding-window check/record pairs, one per abuse surface. Each `check*`
-// returns a 429 Response when the caller is over the limit (otherwise null);
-// each `record*` inserts a row and opportunistically prunes expired ones so
-// its backing table stays small. All D1-backed except the webexploit pair,
-// which deliberately uses env.WEBEXPLOIT_DB only — see its own comment below.
+// Eight sliding-window check/record pairs, one per abuse surface. Each `check*`
+// returns a 429 Response when the caller is over the limit (otherwise null),
+// EXCEPT isNewDeviceAlertLimited (see its own comment) which returns a plain
+// boolean instead, since the action it guards is a side-effect email, not
+// the HTTP request itself. Each `record*` inserts a row and opportunistically
+// prunes expired ones so its backing table stays small. All D1-backed except
+// the webexploit pair, which deliberately uses env.WEBEXPLOIT_DB only — see
+// its own comment below.
 
 import { jsonResponse, clientIP } from './http.js';
 
@@ -192,4 +195,35 @@ export async function recordEmailAction(env, request) {
   await env.DB.prepare('INSERT INTO email_action_rate_limit (ip, ts) VALUES (?, ?)')
     .bind(clientIP(request), now).run();
   await env.DB.prepare('DELETE FROM email_action_rate_limit WHERE ts < ?').bind(now - EMAIL_ACTION_RL_WINDOW_MS).run();
+}
+
+export const NEW_DEVICE_ALERT_RL_WINDOW_MS = 60 * 60 * 1000; // 1 hour
+export const NEW_DEVICE_ALERT_RL_MAX = 3;                    // new-device alert emails per account per window
+
+// Unlike every check*/record* pair above, this does NOT return a 429
+// Response — POST /api/auth/login must still succeed for valid credentials
+// regardless of this limit; only the side-effect alert email gets skipped
+// once an account is over the cap. Protects against a trivial email-bomb /
+// Resend-quota-exhaustion attack: without it, anyone who already has valid
+// credentials could trigger unlimited alert sends just by never sending
+// the device_id cookie, since checkLoginLimit/recordLoginFailure only
+// throttle FAILED logins, not successful ones. Keyed by user_id, not IP —
+// the attacker's IP is irrelevant to the victim's inbox/this site's shared
+// send quota being what's under attack. See new_device_alert_rate_limit in
+// schema.sql.
+export async function isNewDeviceAlertLimited(env, userId) {
+  if (!env.DB) return false;
+  const cutoff = Date.now() - NEW_DEVICE_ALERT_RL_WINDOW_MS;
+  const row = await env.DB.prepare(
+    'SELECT COUNT(*) AS n FROM new_device_alert_rate_limit WHERE user_id = ? AND ts > ?'
+  ).bind(userId, cutoff).first();
+  return (row?.n ?? 0) >= NEW_DEVICE_ALERT_RL_MAX;
+}
+
+export async function recordNewDeviceAlert(env, userId) {
+  if (!env.DB) return;
+  const now = Date.now();
+  await env.DB.prepare('INSERT INTO new_device_alert_rate_limit (user_id, ts) VALUES (?, ?)')
+    .bind(userId, now).run();
+  await env.DB.prepare('DELETE FROM new_device_alert_rate_limit WHERE ts < ?').bind(now - NEW_DEVICE_ALERT_RL_WINDOW_MS).run();
 }

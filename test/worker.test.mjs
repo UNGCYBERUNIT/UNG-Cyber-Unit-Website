@@ -2042,7 +2042,7 @@ describe('GET /api/bot/pathfinder-status', () => {
 // actually succeeds), and the post-auth "does this account have a confirmed
 // email" check from a separately-controlled boolean — same per-query
 // dispatch-by-SQL style as mockPublicProfileDB above.
-function mockLoginDB(usersByUsername, { hasConfirmedEmail = false, isKnownDevice = false, emails = ['alice@example.com'] } = {}) {
+function mockLoginDB(usersByUsername, { hasConfirmedEmail = false, isKnownDevice = false, emails = ['alice@example.com'], isAlertRateLimited = false } = {}) {
   const calls = [];
   return {
     calls,
@@ -2058,6 +2058,9 @@ function mockLoginDB(usersByUsername, { hasConfirmedEmail = false, isKnownDevice
             }
             if (/SELECT 1 FROM known_devices WHERE user_id = \? AND device_token_hash = \?/.test(sql)) {
               return isKnownDevice ? { 1: 1 } : null;
+            }
+            if (/SELECT COUNT\(\*\) AS n FROM new_device_alert_rate_limit WHERE user_id = \? AND ts > \?/.test(sql)) {
+              return { n: isAlertRateLimited ? 999 : 0 };
             }
             return null;
           },
@@ -2173,6 +2176,34 @@ describe('POST /api/auth/login', () => {
     assert.match(sentBody.subject, /New sign-in/);
     assert.match(sentBody.text, /Chrome on Windows/);
     assert.match(sentBody.text, /203\.0\.113\.7/);
+
+    const rlInsert = db.calls.find(c => c.op === 'run' && /INSERT INTO new_device_alert_rate_limit/.test(c.sql));
+    assert.ok(rlInsert, 'expected the alert to consume one slot of the per-account rate limit');
+    assert.equal(rlInsert.bindings[0], 1);
+  });
+
+  test('should still record a new device but skip the email once the per-account alert rate limit is hit', async (t) => {
+    // The critical finding this guards: without this cap, anyone with valid
+    // credentials could email-bomb the account and exhaust the site's
+    // shared Resend quota just by never sending the device_id cookie —
+    // every such login looks "new" and checkLoginLimit/recordLoginFailure
+    // never applies, since every one of these logins succeeds.
+    const fetchCalls = [];
+    t.mock.method(global, 'fetch', async (input, opts) => { fetchCalls.push({ input, opts }); return { ok: true, json: async () => ({}) }; });
+    const hash = await hashPassword('correct-password');
+    const db = mockLoginDB(
+      { alice: { ...ALICE, password_hash: hash } },
+      { hasConfirmedEmail: true, isKnownDevice: false, isAlertRateLimited: true },
+    );
+    const res = await post(
+      { username: 'alice', password: 'correct-password' },
+      db,
+      { env: { RESEND_API_KEY: 'test-key' } },
+    );
+    assert.equal(res.status, 200); // login still succeeds — the cap never blocks the request itself
+    assert.equal(fetchCalls.length, 0, 'should not have sent an alert past the per-account cap');
+    assert.ok(db.calls.some(c => c.op === 'run' && /INSERT INTO known_devices/.test(c.sql)), 'the device should still be recorded as known going forward');
+    assert.ok(!db.calls.some(c => c.op === 'run' && /INSERT INTO new_device_alert_rate_limit/.test(c.sql)), 'should not consume the rate-limit budget for an alert that was never sent');
   });
 
   test('should not alert or re-insert when the device is already known', async (t) => {

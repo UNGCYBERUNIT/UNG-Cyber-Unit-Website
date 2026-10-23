@@ -21,6 +21,8 @@ import {
   recordEmailAction,
   checkLoginLimit,
   recordLoginFailure,
+  isNewDeviceAlertLimited,
+  recordNewDeviceAlert,
 } from '../lib/ratelimit.js';
 import { sendResendEmail } from '../lib/email.js';
 import { dateStrUTC, nextStreak, summarizeUserAgent } from '../lib/util.js';
@@ -133,12 +135,23 @@ export async function handleAuthRoutes(request, env, url, path, secureCookie) {
       // no designated primary" pattern as Kanban's notifications, not a
       // security-relevant choice either way — there's nothing to pick).
       // Best-effort: a failed send never blocks the login response.
-      if (hasConfirmedEmail && env.RESEND_API_KEY) {
+      //
+      // Rate-limited per account (isNewDeviceAlertLimited, ratelimit.js) —
+      // unlike checkLoginLimit above, which only throttles FAILED logins.
+      // Without this, anyone who already has valid credentials could
+      // trigger unlimited sends just by omitting the device_id cookie on
+      // every request (each one looks "new"), email-bombing the account
+      // and exhausting this site's shared Resend quota for every user.
+      // The cap only skips the EMAIL, never the login itself — valid
+      // credentials still succeed either way (see schema.sql's comment on
+      // new_device_alert_rate_limit for the full rationale).
+      if (hasConfirmedEmail && env.RESEND_API_KEY && !(await isNewDeviceAlertLimited(env, user.id))) {
         const { results: emailRows } = await env.DB.prepare(
           'SELECT email FROM user_emails WHERE user_id = ? AND email IS NOT NULL'
         ).bind(user.id).all();
         const recipients = (emailRows ?? []).map(r => r.email);
         if (recipients.length) {
+          await recordNewDeviceAlert(env, user.id);
           const when = new Date(now).toLocaleString('en-US', { timeZone: 'UTC', dateStyle: 'medium', timeStyle: 'short' });
           const deviceSummary = summarizeUserAgent(request.headers.get('User-Agent'));
           const ip = clientIP(request);
@@ -150,8 +163,17 @@ export async function handleAuthRoutes(request, env, url, path, secureCookie) {
               text: `We noticed a new sign-in to your CyberUnit @ UNG account (${user.username}) on ${when} UTC, from ${deviceSummary}, IP ${ip}.\n\nIf this was you, no action is needed — this is just a security notice for a browser we haven't seen before.\n\nIf you don't recognize this, go to ${url.origin} and use "Forgot password?" to reset it immediately, then use "Sign out everywhere" from your profile to end any other active sessions.`,
               html: `<p>We noticed a new sign-in to your CyberUnit @ UNG account (<strong>${escapeHtml(user.username)}</strong>) on ${when} UTC, from ${escapeHtml(deviceSummary)}, IP ${escapeHtml(ip)}.</p><p>If this was you, no action is needed — this is just a security notice for a browser we haven't seen before.</p><p>If you don't recognize this, go to <a href="${url.origin}">${escapeHtml(url.origin)}</a> and use "Forgot password?" to reset it immediately, then use "Sign out everywhere" from your profile to end any other active sessions.</p>`,
             });
-          } catch (err) {
-            console.error('new-device alert send failed', err.message);
+          } catch {
+            // Deliberately not logging err.message here (unlike every
+            // other sendResendEmail catch site in this file) — Resend's
+            // error responses can echo request fields back, and this is
+            // the one call site whose request body is a security alert
+            // about a specific account, so its error text is more likely
+            // than most to carry an email address or other account detail
+            // into Workers Logs, which now persists for days (see
+            // CLAUDE.md's Workers Logs note). A bare marker is enough
+            // signal that a send failed without that risk.
+            console.error(`new-device alert send failed for user ${user.id}`);
           }
         }
       }
