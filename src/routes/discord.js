@@ -135,7 +135,7 @@ export async function handleDiscordRoutes(request, env, url, path, secureCookie)
       streak: target.streak ?? 0,
       badges: pathwayBadges(doneTopics),
       rank: await leaderboardRank(env, 'quiz_results', target.id, target.username),
-      roomRank: await leaderboardRank(env, 'quiz_room_attempts', target.id, target.username),
+      roomRank: await leaderboardRank(env, 'quiz_room_attempts', target.id, target.username, 'completed_at'),
     });
   }
 

@@ -88,26 +88,29 @@ export function computeMissRates(questions, answers) {
 }
 
 // A user's rank on a leaderboard, using the same ordering as /api/leaderboard
-// (points, then count, then username). `table` is a fixed internal name, never
+// (points, then completion time — earliest finisher wins a points tie — then
+// count, then username). `table`/`timeCol` are fixed internal names, never
 // user input. Returns null for guests or users with no points.
-export async function leaderboardRank(env, table, userId, username) {
+export async function leaderboardRank(env, table, userId, username, timeCol = 'updated_at') {
   const agg = await env.DB.prepare(
-    `SELECT SUM(score) AS points, COUNT(*) AS count FROM ${table} WHERE user_id = ?`
+    `SELECT SUM(score) AS points, COUNT(*) AS count, MAX(${timeCol}) AS completedAt FROM ${table} WHERE user_id = ?`
   ).bind(userId).first();
   const points = agg?.points ?? 0;
   const count = agg?.count ?? 0;
+  const completedAt = agg?.completedAt ?? 0;
   if (points <= 0) return null;
   const row = await env.DB.prepare(`
     SELECT COUNT(*) + 1 AS rank FROM (
-      SELECT u.username, SUM(t.score) AS pts, COUNT(*) AS cnt
+      SELECT u.username, SUM(t.score) AS pts, COUNT(*) AS cnt, MAX(t.${timeCol}) AS at
       FROM users u JOIN ${table} t ON t.user_id = u.id
       WHERE u.role != 'guest'
       GROUP BY u.id
     ) x
     WHERE x.pts > ?
-       OR (x.pts = ? AND x.cnt > ?)
-       OR (x.pts = ? AND x.cnt = ? AND x.username < ?)
-  `).bind(points, points, count, points, count, username).first();
+       OR (x.pts = ? AND x.at < ?)
+       OR (x.pts = ? AND x.at = ? AND x.cnt > ?)
+       OR (x.pts = ? AND x.at = ? AND x.cnt = ? AND x.username < ?)
+  `).bind(points, points, completedAt, points, completedAt, count, points, completedAt, count, username).first();
   return row?.rank ?? null;
 }
 

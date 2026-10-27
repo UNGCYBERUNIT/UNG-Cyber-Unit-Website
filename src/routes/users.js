@@ -33,7 +33,7 @@ export async function handleUserRoutes(request, env, url, path, secureCookie) {
       created_at: target.created_at,
       badges: pathwayBadges(doneTopics),
       rank: await leaderboardRank(env, 'quiz_results', target.id, target.username),
-      roomRank: await leaderboardRank(env, 'quiz_room_attempts', target.id, target.username),
+      roomRank: await leaderboardRank(env, 'quiz_room_attempts', target.id, target.username, 'completed_at'),
       isStudent: (ROLE_RANK[target.role] ?? 0) >= ROLE_RANK.student,
     });
   }
@@ -83,7 +83,7 @@ export async function handleUserRoutes(request, env, url, path, secureCookie) {
         created_at: u.created_at,
         badges: pathwayBadges(doneTopics),
         rank: await leaderboardRank(env, 'quiz_results', u.id, u.username),
-        roomRank: await leaderboardRank(env, 'quiz_room_attempts', u.id, u.username),
+        roomRank: await leaderboardRank(env, 'quiz_room_attempts', u.id, u.username, 'completed_at'),
         isStudent: (ROLE_RANK[u.role] ?? 0) >= ROLE_RANK.student,
       };
     }));
@@ -93,6 +93,10 @@ export async function handleUserRoutes(request, env, url, path, secureCookie) {
 
   // GET /api/leaderboard?mode=modules|rooms — top performers. "modules" ranks
   // by topic-quiz points, "rooms" by quiz-room points. Guests are excluded.
+  // Ties on points are broken by completion time — whoever's last
+  // contributing quiz/room finalized their current total earliest ranks
+  // higher — same "earliest finisher wins" idea already used by the
+  // per-module CTF leaderboard below, before falling back to username.
   if (path === '/api/leaderboard' && request.method === 'GET') {
     if (!env.JWT_SECRET || !env.DB) return jsonResponse({ error: 'Server not configured' }, 503);
     const session = await getSession(request, env);
@@ -100,8 +104,8 @@ export async function handleUserRoutes(request, env, url, path, secureCookie) {
 
     const mode = url.searchParams.get('mode') === 'rooms' ? 'rooms' : 'modules';
     const src = mode === 'rooms'
-      ? { table: 'quiz_room_attempts', join: 'a.user_id', score: 'a.score', total: 'a.total', unit: 'a.id' }
-      : { table: 'quiz_results', join: 'q.user_id', score: 'q.score', total: 'q.total', unit: 'q.topic_id' };
+      ? { table: 'quiz_room_attempts', join: 'a.user_id', score: 'a.score', total: 'a.total', unit: 'a.id', time: 'a.completed_at' }
+      : { table: 'quiz_results', join: 'q.user_id', score: 'q.score', total: 'q.total', unit: 'q.topic_id', time: 'q.updated_at' };
     const t = mode === 'rooms' ? 'a' : 'q';
 
     const { results: top } = await env.DB.prepare(`
@@ -109,12 +113,13 @@ export async function handleUserRoutes(request, env, url, path, secureCookie) {
              u.avatar,
              SUM(${src.score}) AS points,
              COUNT(${src.unit}) AS count,
-             SUM(CASE WHEN ${src.score} = ${src.total} THEN 1 ELSE 0 END) AS perfect
+             SUM(CASE WHEN ${src.score} = ${src.total} THEN 1 ELSE 0 END) AS perfect,
+             MAX(${src.time}) AS completedAt
       FROM users u
       JOIN ${src.table} ${t} ON ${src.join} = u.id
       WHERE u.role != 'guest'
       GROUP BY u.id
-      ORDER BY points DESC, count DESC, u.username ASC
+      ORDER BY points DESC, completedAt ASC, count DESC, u.username ASC
       LIMIT 10
     `).all();
 
@@ -125,7 +130,7 @@ export async function handleUserRoutes(request, env, url, path, secureCookie) {
     return jsonResponse({
       mode,
       top: (top ?? []).map((r, i) => ({
-        rank: i + 1, username: r.username, avatar: r.avatar ?? null, points: r.points ?? 0, count: r.count ?? 0, perfect: r.perfect ?? 0,
+        rank: i + 1, username: r.username, avatar: r.avatar ?? null, points: r.points ?? 0, count: r.count ?? 0, perfect: r.perfect ?? 0, completedAt: r.completedAt ?? null,
       })),
       me: {
         username: session.username,
@@ -148,7 +153,7 @@ export async function handleUserRoutes(request, env, url, path, secureCookie) {
     if (!session) return jsonResponse({ error: 'Not authenticated' }, 401);
 
     const { results: rows } = await env.DB.prepare(`
-      SELECT u.id AS user_id, u.username, u.avatar, cc.challenge_id, cc.part_id
+      SELECT u.id AS user_id, u.username, u.avatar, cc.challenge_id, cc.part_id, cc.completed_at
       FROM challenge_completions cc
       JOIN users u ON u.id = cc.user_id
       WHERE u.role != 'guest'
@@ -158,15 +163,19 @@ export async function handleUserRoutes(request, env, url, path, secureCookie) {
     for (const r of rows ?? []) {
       const points = CHALLENGE_PART_POINTS[r.challenge_id]?.[r.part_id] ?? 0;
       if (!byUser.has(r.user_id)) {
-        byUser.set(r.user_id, { username: r.username, avatar: r.avatar ?? null, points: 0, count: 0 });
+        byUser.set(r.user_id, { username: r.username, avatar: r.avatar ?? null, points: 0, count: 0, completedAt: 0 });
       }
       const entry = byUser.get(r.user_id);
       entry.points += points;
       entry.count += 1;
+      entry.completedAt = Math.max(entry.completedAt, r.completed_at);
     }
 
+    // Points tie → whoever's last completion finalized their current total
+    // earliest ranks higher, same "earliest finisher wins" idea the
+    // per-module leaderboard below already uses.
     const ranked = [...byUser.values()].sort((a, b) =>
-      b.points - a.points || b.count - a.count || a.username.localeCompare(b.username)
+      b.points - a.points || a.completedAt - b.completedAt || b.count - a.count || a.username.localeCompare(b.username)
     );
     const myIndex = ranked.findIndex(r => r.username === session.username);
 

@@ -46,7 +46,7 @@ export async function handleProfileRoutes(request, env, url, path, secureCookie)
     // Leaderboard ranks (module completion + quiz rooms). Guests are unranked.
     const isGuest = role === 'guest';
     const rank = isGuest ? null : await leaderboardRank(env, 'quiz_results', session.sub, user.username);
-    const roomRank = isGuest ? null : await leaderboardRank(env, 'quiz_room_attempts', session.sub, user.username);
+    const roomRank = isGuest ? null : await leaderboardRank(env, 'quiz_room_attempts', session.sub, user.username, 'completed_at');
 
     return jsonResponse({
       id: user.id,

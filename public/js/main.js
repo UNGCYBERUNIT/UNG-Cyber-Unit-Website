@@ -3696,6 +3696,7 @@ function renderLeaderboard(top, me, mode = 'modules') {
         <td class="lb-pts">${row.points}</td>
         <td class="lb-sub">${row.count}</td>
         <td class="lb-sub">${row.perfect}</td>
+        <td class="lb-sub">${formatCompletedAt(row.completedAt)}</td>
       </tr>`;
   }).join('');
 
@@ -3708,12 +3709,22 @@ function renderLeaderboard(top, me, mode = 'modules') {
     <div style="overflow-x:auto;">
       <table class="lb-table">
         <thead>
-          <tr><th>Rank</th><th>User</th><th>Points</th><th>${countLabel}</th><th>★ Perfect</th></tr>
+          <tr><th>Rank</th><th>User</th><th>Points</th><th>${countLabel}</th><th>★ Perfect</th><th>Completed</th></tr>
         </thead>
         <tbody>${rows}</tbody>
       </table>
     </div>
     ${footer}`;
+}
+
+// Shared formatter for the "Completed" leaderboard column — the timestamp of
+// the last quiz/room attempt that finalized the user's current points total
+// (also the points-tie breaker server-side: earliest finisher ranks higher).
+function formatCompletedAt(ms) {
+  if (!ms) return '—';
+  return new Date(ms).toLocaleString(undefined, {
+    year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+  });
 }
 
 // Shared rank tile used on both the owner's profile and public profile views.
@@ -3776,6 +3787,7 @@ function renderCtfHubLeaderboard(top, me) {
         </td>
         <td class="lb-pts">${row.points}</td>
         <td class="lb-sub">${row.count}</td>
+        <td class="lb-sub">${formatCompletedAt(row.completedAt)}</td>
       </tr>`;
   }).join('');
 
@@ -3788,7 +3800,7 @@ function renderCtfHubLeaderboard(top, me) {
     <div style="overflow-x:auto;">
       <table class="lb-table">
         <thead>
-          <tr><th>Rank</th><th>User</th><th>Points</th><th>Parts</th></tr>
+          <tr><th>Rank</th><th>User</th><th>Points</th><th>Parts</th><th>Completed</th></tr>
         </thead>
         <tbody>${rows}</tbody>
       </table>
