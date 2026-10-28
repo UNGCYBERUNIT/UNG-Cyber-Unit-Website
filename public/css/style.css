@@ -6,6 +6,12 @@
 
 /* ─── CSS Variables ──────────────────────────────────────── */
 :root {
+  /* Site is dark-only (no light theme) — tells the browser so native form
+     controls (date-picker icon/calendar popup, scrollbars, checkboxes)
+     render light-on-dark instead of their default light-UI assumption,
+     which otherwise makes things like the <input type="date"> calendar
+     icon nearly invisible against --bg. */
+  color-scheme: dark;
   --bg:          #0d0d0d;
   --surface:     #141414;
   --border:      #1f1f1f;
