@@ -2564,7 +2564,13 @@ async function initKanbanPage() {
     document.getElementById('kanbanStatus').value = item?.status ?? prefill.status ?? 'idea';
     document.getElementById('kanbanPriority').value = item?.priority ?? 'medium';
     document.getElementById('kanbanItemType').value = item?.item_type ?? 'task';
-    document.getElementById('kanbanAssignee').value = item?.assigned_to ?? '';
+    // New cards default to assigning the creator themselves — editing an
+    // existing card still respects its real assigned_to (including
+    // Unassigned), and the default only applies if the creator shows up in
+    // the instructor+-only picker list, which they always should since
+    // creating a card requires being instructor+.
+    const defaultAssignee = users.find(u => u.username === currentUser?.username)?.id ?? '';
+    document.getElementById('kanbanAssignee').value = item ? (item.assigned_to ?? '') : defaultAssignee;
     document.getElementById('kanbanParent').value = item?.parent_id ?? '';
     document.getElementById('kanbanDueDate').value = item?.due_date
       ? new Date(item.due_date * 1000).toISOString().slice(0, 10)
