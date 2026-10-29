@@ -3607,7 +3607,6 @@ async function initChallengeSubmissions(challengeId) {
           feedback.className = 'lac-answer-feedback lac-answer-feedback--error';
           feedback.hidden = false;
         } else if (res.ok && data.pending) {
-          pending.add(partId);
           markPending(submitWrap);
         } else if (res.ok && data.correct) {
           completed.add(partId);

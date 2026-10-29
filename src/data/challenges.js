@@ -652,7 +652,7 @@ export function renderChallengeModule(m) {
 // order the /challenges hub lists them in.
 export function challengeModuleNavHtml(currentId) {
   const inOsintLab = osintModules.some(m => m.id === currentId);
-  const list = inOsintLab ? osintModules : ctfModules;
+  const list = inOsintLab ? osintModules : ctfModules.filter(m => m.category !== 'OSINT');
   const hubUrl = inOsintLab ? '/labs/osint' : '/challenges';
   const hubLabel = inOsintLab ? 'OSINT Lab' : 'All Challenges';
 
