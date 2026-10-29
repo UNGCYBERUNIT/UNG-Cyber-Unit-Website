@@ -225,14 +225,14 @@ export const ctfModules = [
           { filename: 'landmark-02.png', caption: 'Image 2' },
         ],
         toolbox: [
-          { name: 'Google Lens / Yandex Images / TinEye', desc: 'Upload the photo to at least two of these — Yandex often outperforms Google on obscure/non-Western subjects, TinEye\'s "Oldest" sort finds the first known copy online.' },
-          { name: 'Right-click → "Search image with Google"', desc: 'The fastest way to kick off a reverse search straight from Chrome.' },
+          { name: 'Google Lens / Yandex Images / TinEye', desc: 'Try at least two.' },
+          { name: 'Right-click → "Search image with Google"', desc: 'Quickest way in from Chrome.' },
         ],
         briefing: {
           sections: [
             {
               heading: 'Situation',
-              body: 'A photograph often contains more than what\'s visible at a glance. Reverse image search can match it to its original source or similar images, and visual clues — signs, architecture, vegetation, the people in frame — can pin down what you\'re looking at even without a direct match. Two images below, one question each: name the landmark.',
+              body: 'Two images, one question each: name the landmark.',
             },
           ],
         },
@@ -248,10 +248,10 @@ export const ctfModules = [
             title: 'Identify Image 1',
             difficulty: 'medium',
             points: 15,
-            desc: 'What landmark is shown in Image 1, and where is it located (city, country)?',
+            desc: 'Name the landmark in Image 1 and where it is.',
             hints: [
-              { text: 'Try cropping the image to focus on a distinctive feature — the detail sitting on the rooftop.', cost: 2 },
-              { text: 'This one is not in the United States.', cost: 2 },
+              { text: 'Focus on the detail on the rooftop.', cost: 2 },
+              { text: 'Not in the United States.', cost: 2 },
             ],
           },
           {
@@ -259,10 +259,10 @@ export const ctfModules = [
             title: 'Identify Image 2',
             difficulty: 'medium',
             points: 15,
-            desc: 'What is the name of the monument shown in Image 2, and who (or what) does it commemorate?',
+            desc: 'Name the monument in Image 2 and what it honors.',
             hints: [
-              { text: "The uniforms in the crowd are a strong clue to which branch of the U.S. military this honors.", cost: 2 },
-              { text: 'The subject served during the Korean War.', cost: 2 },
+              { text: "The uniforms are a clue to the branch.", cost: 2 },
+              { text: 'Served in the Korean War.', cost: 2 },
             ],
           },
         ],
@@ -270,13 +270,13 @@ export const ctfModules = [
       {
         title: 'what3words Geocoding',
         toolbox: [
-          { name: 'what3words.com', desc: 'Type the three words (with or without the leading ///) into the search bar, then switch to satellite view to see buildings and landmarks around the pin.' },
+          { name: 'what3words.com', desc: 'Paste the three words into the search bar.' },
         ],
         briefing: {
           sections: [
             {
               heading: 'Situation',
-              body: 'what3words divides the planet into 3m × 3m squares, each with a unique three-word address. Emergency services and delivery companies already use it; as an OSINT analyst you may encounter one in a social post or a comms log. Both addresses below are UNG Dahlonega campus buildings.',
+              body: 'Two what3words addresses, both UNG Dahlonega campus buildings.',
             },
           ],
         },
@@ -288,16 +288,16 @@ export const ctfModules = [
             title: '///stepfather.animates.astonish',
             difficulty: 'easy',
             points: 15,
-            desc: 'What is the name of this UNG dining facility, and what is it commonly called by students?',
+            desc: 'Name this UNG dining facility and its common nickname.',
           },
           {
             id: 'w3w-q2-cottrell-center',
             title: '///unfortunately.airship.subscribers',
             difficulty: 'easy',
             points: 15,
-            desc: 'What is the name of this UNG building? What academic programs does it house?',
+            desc: 'Name this UNG building and what it houses.',
             hints: [
-              { text: 'Both locations in this challenge are UNG\'s Dahlonega campus buildings.', cost: 2 },
+              { text: 'Both locations are UNG Dahlonega campus buildings.', cost: 2 },
             ],
           },
         ],
@@ -305,15 +305,15 @@ export const ctfModules = [
       {
         title: 'WHOIS / DNS Reconnaissance',
         toolbox: [
-          { name: 'who.is', desc: 'Web-based WHOIS lookup — registrar, registration dates, nameservers.' },
-          { name: 'dig / nslookup', desc: '`dig A/MX/TXT/NS ungcyberunit.org` for the equivalent DNS records from a terminal.' },
-          { name: 'dnsdumpster.com', desc: 'A faster way to enumerate subdomains than guessing prefixes one at a time.' },
+          { name: 'who.is', desc: 'Web-based WHOIS lookup.' },
+          { name: 'dig / nslookup', desc: '`dig A/MX/TXT/NS ungcyberunit.org`' },
+          { name: 'dnsdumpster.com', desc: 'Faster subdomain enumeration.' },
         ],
         briefing: {
           sections: [
             {
               heading: 'Situation',
-              body: "Every domain has a WHOIS record (registrar, creation/expiration dates, nameservers) and DNS records (A, MX, NS, TXT) showing what it points to and how its email is handled. This is often the first step in mapping an organization's digital footprint — and the target here is the club's own real domain, ungcyberunit.org.",
+              body: "Map the club's own real domain, ungcyberunit.org, via WHOIS and DNS.",
             },
           ],
         },
@@ -401,13 +401,13 @@ export const ctfModules = [
           icon: '🗄️',
         },
         toolbox: [
-          { name: 'View Page Source (Ctrl+U)', desc: 'Raw HTML, including anything left behind in <meta> tags that never renders on the page itself — essential for this challenge.' },
+          { name: 'View Page Source (Ctrl+U)', desc: 'Check the <meta> tags.' },
         ],
         briefing: {
           sections: [
             {
               heading: 'Situation',
-              body: "This is the lab's final and most involved section — it draws on the same instincts as the first three (reading between the lines, checking everywhere information might hide) and asks for more of it. People have been putting personal information online since the mid-1990s. Old personal sites were hand-built in raw HTML and often include details an author would never post today. Your target is a real 1999-era personal website that is still live — start at blog.acklenx.com, find the \"old\" site link in the nav, and explore every page, reading the HTML source as you go.",
+              body: "A real, still-live 1999 personal site. Start at blog.acklenx.com, find the \"old\" site link, and explore.",
             },
           ],
         },
