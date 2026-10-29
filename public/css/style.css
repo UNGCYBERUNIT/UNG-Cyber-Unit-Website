@@ -4023,17 +4023,25 @@ footer {
 
 .lac-image-gallery {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(160px, 200px));
+  justify-content: center;
   gap: 1rem;
   margin: 1rem 0 2.5rem;
 }
 .lac-image-card {
   margin: 0;
-  padding: 0.75rem;
+  padding: 0.6rem;
   text-align: center;
 }
 .lac-image-card img {
+  display: block;
   width: 100%;
+  height: 160px;
+  /* contain, not cover — a reverse-image-search challenge needs the whole
+     frame intact (hints can reference details near any edge), so nothing
+     gets cropped, just scaled down and letterboxed on the shorter axis. */
+  object-fit: contain;
+  background: #1a1a1a;
   border-radius: 4px;
   border: 1px solid var(--border);
 }
