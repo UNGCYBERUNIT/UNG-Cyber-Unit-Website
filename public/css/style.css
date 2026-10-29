@@ -4030,8 +4030,11 @@ footer {
 }
 
 /* Composite module (e.g. OSINT: one page/card, 4 sub-challenge sections) —
-   a bigger divider than .instructor-section-heading so a section break reads
-   as a step up from the "// Your Toolbox"-style headings nested under it. */
+   each section is a native <details>/<summary> disclosure (no JS needed,
+   same pattern as .format-guide elsewhere) so clicking the heading expands
+   or collapses it. A bigger divider than .instructor-section-heading so a
+   section break reads as a step up from the "// Your Toolbox"-style
+   headings nested under it. */
 .lac-module-section {
   margin-top: 3rem;
   margin-bottom: 1rem;
@@ -4042,8 +4045,31 @@ footer {
   margin-top: 2rem;
 }
 .lac-module-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
   font-family: 'Share Tech Mono', monospace;
   font-size: 1.3rem;
   color: var(--text);
   margin: 0;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+}
+.lac-module-section-heading::-webkit-details-marker { display: none; }
+.lac-module-section-heading::marker { display: none; }
+.lac-module-section-heading:hover { color: var(--accent); }
+.lac-module-section[open] > .lac-module-section-heading { color: var(--accent); }
+
+.lac-module-section-arrow {
+  font-size: 1rem;
+  color: var(--text-muted);
+  transition: transform 0.2s;
+  flex-shrink: 0;
+}
+.lac-module-section[open] .lac-module-section-arrow { transform: rotate(180deg); }
+
+.lac-module-section-body {
+  margin-top: 1rem;
 }

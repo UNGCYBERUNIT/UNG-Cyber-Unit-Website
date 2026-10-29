@@ -618,11 +618,16 @@ export function renderChallengeModule(m) {
           </p>
         </section>`,
         ...m.sections.map((s, i) => `
-      <section class="instructor-section lac-module-section">
-        <h2 class="lac-module-section-heading">${i + 1}. ${escapeHtml(s.title)}</h2>
-        ${s.intro ? `<p style="color: var(--text-muted); font-size: 0.9rem; margin: 0.25rem 0 1rem;">${escapeHtml(s.intro)}</p>` : ''}
-      </section>
-      ${renderSectionBody({ ...s, moduleId: m.id }, { includeSummary: false })}`),
+      <details class="instructor-section lac-module-section"${i === 0 ? ' open' : ''}>
+        <summary class="lac-module-section-heading">
+          <span>${i + 1}. ${escapeHtml(s.title)}</span>
+          <span class="lac-module-section-arrow" aria-hidden="true">▾</span>
+        </summary>
+        <div class="lac-module-section-body">
+          ${s.intro ? `<p style="color: var(--text-muted); font-size: 0.9rem; margin: 0.25rem 0 1rem;">${escapeHtml(s.intro)}</p>` : ''}
+          ${renderSectionBody({ ...s, moduleId: m.id }, { includeSummary: false })}
+        </div>
+      </details>`),
       ].join('\n')
     : renderSectionBody({ ...m, moduleId: m.id });
 
