@@ -3517,32 +3517,60 @@ function initChallengeAnswerKeyToggle() {
 // pages. Each .lac-challenge card is a "part" (data-part-id); correct
 // answers are checked and stored entirely server-side (POST
 // /api/challenges/:id/submit) — nothing here knows what the right answer is.
+// `gradingMode="manual"` parts (OSINT lab's free-text/live-data questions)
+// get a distinct "pending review" state instead of correct/incorrect.
+//
+// Returns a small controller so initChallengeHints() can feed hint-point
+// deductions into the same running score summary, since both read/write the
+// same #challengeProgressSummary element.
 async function initChallengeSubmissions(challengeId) {
   const cards = document.querySelectorAll('.lac-challenge[data-part-id]');
-  if (!cards.length) return;
+  const controller = { recordHintReveal() {} };
+  if (!cards.length) return controller;
 
   let completed = new Set();
+  let score = 0;
+  let maxPoints = 0;
   if (currentUser) {
     try {
       const res = await fetch(`/api/challenges/${challengeId}/progress`);
-      if (res.ok) completed = new Set((await res.json()).completed || []);
+      if (res.ok) {
+        const data = await res.json();
+        completed = new Set(data.completed || []);
+        score = data.score ?? 0;
+        maxPoints = data.maxPoints ?? 0;
+      }
     } catch { /* show all as not-yet-completed */ }
   }
 
   const summary = document.getElementById('challengeProgressSummary');
   const updateSummary = () => {
     if (!summary) return;
-    summary.textContent = `[ ${completed.size}/${cards.length} complete ]`;
-    summary.hidden = completed.size === 0;
+    if (maxPoints > 0) {
+      summary.textContent = `[ ${score}/${maxPoints} pts ]`;
+      summary.hidden = completed.size === 0 && score === 0;
+    } else {
+      summary.textContent = `[ ${completed.size}/${cards.length} complete ]`;
+      summary.hidden = completed.size === 0;
+    }
   };
   updateSummary();
+
+  controller.recordHintReveal = (cost) => {
+    score -= cost;
+    updateSummary();
+  };
 
   const markCompleted = (submitWrap) => {
     submitWrap.innerHTML = '<p class="lac-completed-badge">✅ Completed</p>';
   };
+  const markPending = (submitWrap) => {
+    submitWrap.innerHTML = '<p class="lac-pending-badge">⏳ Submitted — pending instructor review</p>';
+  };
 
   cards.forEach((card) => {
     const partId = card.dataset.partId;
+    const isManual = card.dataset.gradingMode === 'manual';
     const submitWrap = card.querySelector('.lac-submit');
     if (!submitWrap) return;
 
@@ -3578,10 +3606,18 @@ async function initChallengeSubmissions(challengeId) {
           feedback.textContent = data.error || 'Too many attempts — please wait a few minutes.';
           feedback.className = 'lac-answer-feedback lac-answer-feedback--error';
           feedback.hidden = false;
+        } else if (res.ok && data.pending) {
+          pending.add(partId);
+          markPending(submitWrap);
         } else if (res.ok && data.correct) {
           completed.add(partId);
+          score += parseInt(card.dataset.points, 10) || 0;
           updateSummary();
           markCompleted(submitWrap);
+        } else if (isManual) {
+          feedback.textContent = 'Something went wrong — try again.';
+          feedback.className = 'lac-answer-feedback lac-answer-feedback--error';
+          feedback.hidden = false;
         } else {
           feedback.textContent = 'Not quite — try again.';
           feedback.className = 'lac-answer-feedback lac-answer-feedback--error';
@@ -3596,6 +3632,105 @@ async function initChallengeSubmissions(challengeId) {
       }
     });
   });
+
+  return controller;
+}
+
+// Reveal-for-cost hints (OSINT lab) — a `.lac-hint` block per part, each with
+// a toggle button that confirms the point cost before spending it. Already-
+// revealed hints (from a prior visit) are fetched once up front and shown
+// open immediately, same idempotent endpoint as a fresh reveal so there's
+// only one code path. `controller` (from initChallengeSubmissions) is how
+// the resulting point deduction reaches the shared score summary.
+async function initChallengeHints(challengeId, controller) {
+  const hintEls = document.querySelectorAll('.lac-hint');
+  if (!hintEls.length || !controller) return;
+
+  let alreadyRevealed = new Set();
+  if (currentUser) {
+    try {
+      const res = await fetch(`/api/challenges/${challengeId}/progress`);
+      if (res.ok) {
+        const data = await res.json();
+        alreadyRevealed = new Set((data.hintsRevealed || []).map(h => `${h.partId}:${h.hintIndex}`));
+      }
+    } catch { /* treat all hints as not-yet-revealed */ }
+  }
+
+  hintEls.forEach(async (hintEl) => {
+    const card = hintEl.closest('.lac-challenge[data-part-id]');
+    const partId = card?.dataset.partId;
+    const hintIndex = parseInt(hintEl.dataset.hintIndex, 10);
+    const cost = parseInt(hintEl.dataset.hintCost, 10) || 2;
+    const toggle = hintEl.querySelector('.lac-hint-toggle');
+    const body = hintEl.querySelector('.lac-hint-body');
+    if (!partId || !toggle || !body) return;
+
+    const reveal = async () => {
+      toggle.disabled = true;
+      try {
+        const res = await fetch(`/api/challenges/${challengeId}/hints/reveal`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ partId, hintIndex }),
+        });
+        if (!res.ok) { toggle.disabled = false; return; }
+        const data = await res.json();
+        body.textContent = data.text;
+        body.hidden = false;
+        toggle.remove();
+        if (!data.alreadyRevealed) controller.recordHintReveal(data.cost ?? cost);
+      } catch { toggle.disabled = false; }
+    };
+
+    if (alreadyRevealed.has(`${partId}:${hintIndex}`)) {
+      reveal();
+      return;
+    }
+
+    toggle.addEventListener('click', () => {
+      if (!currentUser) { openAuthModal('login'); return; }
+      if (!window.confirm(`Revealing this hint costs ${cost} points. Reveal?`)) return;
+      reveal();
+    });
+  });
+}
+
+// ─── OSINT Lab Hub (/labs/osint) ────────────────────────────────────────────
+// Same progressive-enhancement shape as initChallengesHub() — server-rendered
+// cards stay intact on any fetch failure — but rolls up a points-based score
+// across the 4 OSINT modules instead of a per-card "N/total parts" count.
+async function initOsintLabHub() {
+  const cards = document.querySelectorAll('#osintGrid .card[data-challenge]');
+  if (!cards.length || !currentUser) return;
+
+  let scoreTotal = 0;
+  let maxPointsTotal = 0;
+  await Promise.all([...cards].map(async card => {
+    const id = card.dataset.challenge;
+    const total = parseInt(card.dataset.totalParts, 10) || 0;
+    try {
+      const res = await fetch(`/api/challenges/${id}/progress`);
+      if (!res.ok) return;
+      const data = await res.json();
+      maxPointsTotal += data.maxPoints ?? 0;
+      scoreTotal += data.score ?? 0;
+      const done = (data.completed ?? []).length;
+      if (done === 0) return;
+      card.classList.toggle('card-completed', done === total);
+      const badge = document.createElement('div');
+      badge.className = 'card-progress';
+      badge.setAttribute('aria-label', `${done} of ${total} questions complete`);
+      badge.innerHTML = `${done}/${total}${done === total ? ' <span class="progress-star" aria-hidden="true">★</span>' : ''}`;
+      card.prepend(badge);
+    } catch { /* leave the server-rendered card as-is */ }
+  }));
+
+  const summary = document.getElementById('osintScoreSummary');
+  if (summary && (scoreTotal > 0 || maxPointsTotal > 0)) {
+    summary.textContent = `${scoreTotal} / ${maxPointsTotal} pts`;
+    summary.hidden = false;
+  }
 }
 
 // ─── Student Hub ────────────────────────────────────────────────────────────
@@ -4796,15 +4931,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   } else if (window.location.pathname === '/challenges') {
     initChallengesHub();
     loadCtfHubLeaderboard();
-  } else if (/^\/challenges\/[\w-]+$/.test(window.location.pathname)) {
+  } else if (window.location.pathname === '/labs/osint') {
+    initOsintLabHub();
+  } else if (/^\/challenges\/[\w-]+$/.test(window.location.pathname) || /^\/labs\/osint\/[\w-]+$/.test(window.location.pathname)) {
     // Generic module page — the challenge id is server-injected into
     // <body data-challenge-id>, so this one branch covers every new-style
-    // module instead of needing an else-if per module like the two legacy
-    // pages above.
+    // module (both /challenges/:id and /labs/osint/:slug) instead of
+    // needing an else-if per module like the two legacy pages above.
     const challengeId = document.body.dataset.challengeId;
     if (challengeId) {
       initChallengeAnswerKeyToggle();
-      initChallengeSubmissions(challengeId);
+      initChallengeSubmissions(challengeId).then(controller => initChallengeHints(challengeId, controller));
       loadModuleLeaderboard(challengeId);
     }
   }

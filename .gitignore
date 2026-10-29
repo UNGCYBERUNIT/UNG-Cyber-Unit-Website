@@ -34,6 +34,12 @@ Thumbs.db
 ungcyberunit_security_remediation.md
 cloudflare-migration-verification.md
 
+# OSINT lab implementation spec — contains real PII (home address, phone,
+# email) for the Challenge 4 target site. Must never be committed; the
+# PII-bearing accepted answers live only in D1 (challenge_answers), per the
+# same policy as answer-keys/ above.
+Implementation Guide.md
+
 # Challenge answer key source files — content lives in D1
 # (challenge_answer_keys table), never in the repo, since this GitHub repo is
 # public. Kept here locally only for re-ingestion (wrangler d1 execute).
