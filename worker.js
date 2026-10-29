@@ -79,14 +79,12 @@ import {
 
 import {
   ctfModules,
-  osintModules,
   CHALLENGE_PARTS,
   challengeModuleMetaTags,
   renderChallengeModule,
   challengeModuleNavHtml,
   challengeCard,
   challengesHubCards,
-  osintLabCards,
 } from './src/data/challenges.js';
 
 // ─── Test Exports ─────────────────────────────────────────────────────────────
@@ -127,11 +125,9 @@ export {
   topicMetaTags,
   computeMissRates,
   ctfModules,
-  osintModules,
   CHALLENGE_PARTS,
   challengeCard,
   challengesHubCards,
-  osintLabCards,
   challengeModuleMetaTags,
   renderChallengeModule,
   challengeModuleNavHtml,

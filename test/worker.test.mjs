@@ -42,11 +42,9 @@ import worker, {
   topicMetaTags,
   computeMissRates,
   ctfModules,
-  osintModules,
   CHALLENGE_PARTS,
   challengeCard,
   challengesHubCards,
-  osintLabCards,
   challengeModuleNavHtml,
 } from '../worker.js';
 
@@ -1002,22 +1000,17 @@ describe('challengeCard / challengesHubCards', () => {
     }
   });
 
-  test('challengesHubCards should render one card per module, including the legacy pages, but excluding the OSINT lab (it has its own hub)', () => {
+  test('challengesHubCards should render one card per module, including the legacy pages', () => {
     const html = challengesHubCards();
     assert.match(html, /href="\/log-analysis-challenge"/);
     assert.match(html, /href="\/network-traffic-challenge"/);
-    assert.equal((html.match(/class="card card-link"/g) || []).length, ctfModules.length - osintModules.length);
-    for (const m of osintModules) {
-      assert.ok(!html.includes(m.pageUrl), `main hub should not link to OSINT module ${m.id}`);
-    }
+    assert.equal((html.match(/class="card card-link"/g) || []).length, ctfModules.length);
   });
 
-  test('osintLabCards should render one card per OSINT module', () => {
-    const html = osintLabCards();
-    assert.equal((html.match(/class="card card-link"/g) || []).length, osintModules.length);
-    for (const m of osintModules) {
-      assert.ok(html.includes(m.pageUrl), `OSINT hub links to module ${m.id}`);
-    }
+  test('the OSINT lab should be a single card on the hub (one module, multiple sections)', () => {
+    const html = challengesHubCards();
+    assert.match(html, /href="\/challenges\/osint"/);
+    assert.equal((html.match(/href="\/challenges\/osint"/g) || []).length, 1);
   });
 });
 
@@ -1039,25 +1032,12 @@ describe('challengeModuleNavHtml', () => {
   });
 
   test('should wrap around at both ends', () => {
-    // OSINT modules cycle only among themselves (their own hub), so the
-    // main cycle here is every non-OSINT module.
-    const mainModules = ctfModules.filter(m => m.category !== 'OSINT');
-    const first = mainModules[0];
-    const last = mainModules[mainModules.length - 1];
+    const first = ctfModules[0];
+    const last = ctfModules[ctfModules.length - 1];
     const htmlForFirst = challengeModuleNavHtml(first.id);
     assert.match(htmlForFirst, new RegExp(`href="${last.pageUrl.replace(/\//g, '\\/')}"`)); // prev wraps to last
     const htmlForLast = challengeModuleNavHtml(last.id);
     assert.match(htmlForLast, new RegExp(`href="${first.pageUrl.replace(/\//g, '\\/')}"`)); // next wraps to first
-  });
-
-  test('should wrap around within the OSINT lab only, hubbing to /labs/osint', () => {
-    const first = osintModules[0];
-    const last = osintModules[osintModules.length - 1];
-    const htmlForFirst = challengeModuleNavHtml(first.id);
-    assert.match(htmlForFirst, new RegExp(`href="${last.pageUrl.replace(/\//g, '\\/')}"`));
-    assert.match(htmlForFirst, /href="\/labs\/osint"/);
-    const htmlForLast = challengeModuleNavHtml(last.id);
-    assert.match(htmlForLast, new RegExp(`href="${first.pageUrl.replace(/\//g, '\\/')}"`));
   });
 });
 
@@ -3654,19 +3634,32 @@ describe('Static/simple pages', () => {
     }
   });
 
-  test('GET /challenges should server-render every non-OSINT CTF module card (not depend on client JS)', async () => {
+  test('GET /challenges should server-render every CTF module card (not depend on client JS)', async () => {
     const res = await worker.fetch(new Request('https://example.com/challenges'), { ASSETS: mockAssets() });
     const body = await res.text();
-    for (const m of ctfModules.filter(x => x.category !== 'OSINT')) {
+    for (const m of ctfModules) {
       assert.ok(body.includes(m.pageUrl), `hub links to module ${m.id}`);
     }
   });
 
-  test('GET /labs/osint should server-render every OSINT module card (not depend on client JS)', async () => {
-    const res = await worker.fetch(new Request('https://example.com/labs/osint'), { ASSETS: mockAssets() });
+  test('GET /labs/osint and /labs/osint/:slug should 301-redirect to the merged /challenges/osint module', async () => {
+    for (const path of ['/labs', '/labs/osint', '/labs/osint/reverse-image', '/labs/osint/web-archaeology']) {
+      const res = await worker.fetch(new Request(`https://example.com${path}`, { redirect: 'manual' }), { ASSETS: mockAssets() });
+      assert.equal(res.status, 301);
+      assert.equal(res.headers.get('Location'), 'https://example.com/challenges/osint');
+    }
+  });
+
+  test('GET /challenges/osint should render every sub-section of the composite OSINT module', async () => {
+    const osint = ctfModules.find(m => m.id === 'osint');
+    const res = await worker.fetch(new Request('https://example.com/challenges/osint'), { ASSETS: mockAssets() });
+    assert.equal(res.status, 200);
     const body = await res.text();
-    for (const m of osintModules) {
-      assert.ok(body.includes(m.pageUrl), `OSINT hub links to module ${m.id}`);
+    for (const section of osint.sections) {
+      assert.ok(body.includes(section.title), `renders section heading ${section.title}`);
+      for (const part of section.parts) {
+        assert.ok(body.includes(`data-part-id="${part.id}"`), `renders part ${part.id}`);
+      }
     }
   });
 

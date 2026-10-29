@@ -205,258 +205,251 @@ export const ctfModules = [
     ethicsNotice: true,
   },
 
-  // ─── OSINT Lab (4 modules) ────────────────────────────────────────────────
+  // ─── OSINT Lab (1 composite module, 1 card on /challenges) ────────────────
   // See Implementation Guide.md (repo root, untracked — contains real PII for
-  // the Web Archaeology target, never commit it). pageUrl deliberately sits
-  // under /labs/osint/... instead of the usual /challenges/... so these are
-  // reachable at the lab's own URL scheme — handled by the same generic
-  // /challenges/:id-style render path via a second route match in
-  // src/routes/pages.js, not a second rendering system.
-  {
-    id: 'osint-reverse-image',
-    title: 'Reverse Image Search',
-    category: 'OSINT',
-    difficulty: 'Intermediate',
-    shortDesc: 'Identify an obscure landmark using nothing but a photo and reverse image search.',
-    pageUrl: '/labs/osint/reverse-image',
-    // Screenshots, so no embedded EXIF to begin with (confirmed with
-    // exiftool) — filenames are deliberately generic per the original
-    // guide's own instruction, so they don't give away the answer.
-    images: [
-      { filename: 'landmark-01.png', caption: 'Image 1' },
-      { filename: 'landmark-02.png', caption: 'Image 2' },
-    ],
-    toolbox: [
-      { name: 'Google Lens / Yandex Images / TinEye', desc: 'Upload the photo to at least two of these — Yandex often outperforms Google on obscure/non-Western subjects, TinEye\'s "Oldest" sort finds the first known copy online.' },
-      { name: 'Right-click → "Search image with Google"', desc: 'The fastest way to kick off a reverse search straight from Chrome.' },
-    ],
-    briefing: {
-      sections: [
-        {
-          heading: 'Situation',
-          body: 'A photograph often contains more than what\'s visible at a glance. Reverse image search can match it to its original source or similar images, and visual clues — signs, architecture, vegetation, the people in frame — can pin down what you\'re looking at even without a direct match. Two images below, one question each: name the landmark.',
+  // the Web Archaeology section, never commit it). One module/one page/one
+  // "OSINT" card, same as every other multi-part module here (e.g. "Breach
+  // the Portal") — `sections` groups its ~18 parts into the 4 sub-challenges
+  // for display (renderChallengeModule), while `parts` stays the flat list
+  // CHALLENGE_PARTS/CHALLENGE_PART_POINTS/progress/leaderboard endpoints
+  // already expect from every module, composite or not.
+  (() => {
+    const sections = [
+      {
+        title: 'Reverse Image Search',
+        // Screenshots, so no embedded EXIF to begin with (confirmed with
+        // exiftool) — filenames are deliberately generic per the original
+        // guide's own instruction, so they don't give away the answer.
+        images: [
+          { filename: 'landmark-01.png', caption: 'Image 1' },
+          { filename: 'landmark-02.png', caption: 'Image 2' },
+        ],
+        toolbox: [
+          { name: 'Google Lens / Yandex Images / TinEye', desc: 'Upload the photo to at least two of these — Yandex often outperforms Google on obscure/non-Western subjects, TinEye\'s "Oldest" sort finds the first known copy online.' },
+          { name: 'Right-click → "Search image with Google"', desc: 'The fastest way to kick off a reverse search straight from Chrome.' },
+        ],
+        briefing: {
+          sections: [
+            {
+              heading: 'Situation',
+              body: 'A photograph often contains more than what\'s visible at a glance. Reverse image search can match it to its original source or similar images, and visual clues — signs, architecture, vegetation, the people in frame — can pin down what you\'re looking at even without a direct match. Two images below, one question each: name the landmark.',
+            },
+          ],
         },
-      ],
-    },
-    // One question per image (not a generic "the photo" location/landmark
-    // pair) — with exactly 2 images provided, each needs its own correct
-    // answer, so each gets its own part. Tool-comparison/source-URL/EXIF
-    // questions from the original spec were dropped entirely rather than
-    // shrunk, since all three only made sense as instructor-reviewed free
-    // text anyway.
-    parts: [
-      {
-        id: 'q1-image-one',
-        title: 'Identify Image 1',
-        difficulty: 'medium',
-        points: 15,
-        desc: 'What landmark is shown in Image 1, and where is it located (city, country)?',
-        hints: [
-          { text: 'Try cropping the image to focus on a distinctive feature — the detail sitting on the rooftop.', cost: 2 },
-          { text: 'This one is not in the United States.', cost: 2 },
+        // One question per image (not a generic "the photo" location/landmark
+        // pair) — with exactly 2 images provided, each needs its own correct
+        // answer, so each gets its own part. Tool-comparison/source-URL/EXIF
+        // questions from the original spec were dropped entirely rather than
+        // shrunk, since all three only made sense as instructor-reviewed free
+        // text anyway.
+        parts: [
+          {
+            id: 'ri-q1-image-one',
+            title: 'Identify Image 1',
+            difficulty: 'medium',
+            points: 15,
+            desc: 'What landmark is shown in Image 1, and where is it located (city, country)?',
+            hints: [
+              { text: 'Try cropping the image to focus on a distinctive feature — the detail sitting on the rooftop.', cost: 2 },
+              { text: 'This one is not in the United States.', cost: 2 },
+            ],
+          },
+          {
+            id: 'ri-q2-image-two',
+            title: 'Identify Image 2',
+            difficulty: 'medium',
+            points: 15,
+            desc: 'What is the name of the monument shown in Image 2, and who (or what) does it commemorate?',
+            hints: [
+              { text: "The uniforms in the crowd are a strong clue to which branch of the U.S. military this honors.", cost: 2 },
+              { text: 'The subject served during the Korean War.', cost: 2 },
+            ],
+          },
         ],
       },
       {
-        id: 'q2-image-two',
-        title: 'Identify Image 2',
-        difficulty: 'medium',
-        points: 15,
-        desc: 'What is the name of the monument shown in Image 2, and who (or what) does it commemorate?',
-        hints: [
-          { text: "The uniforms in the crowd are a strong clue to which branch of the U.S. military this honors.", cost: 2 },
-          { text: 'The subject served during the Korean War.', cost: 2 },
+        title: 'what3words Geocoding',
+        toolbox: [
+          { name: 'what3words.com', desc: 'Type the three words (with or without the leading ///) into the search bar, then switch to satellite view to see buildings and landmarks around the pin.' },
         ],
-      },
-    ],
-    ethicsNotice: false,
-  },
-  {
-    id: 'osint-what3words',
-    title: 'what3words Geocoding',
-    category: 'OSINT',
-    difficulty: 'Beginner',
-    shortDesc: 'Turn two three-word addresses into real UNG/Dahlonega-area landmarks.',
-    pageUrl: '/labs/osint/what3words',
-    toolbox: [
-      { name: 'what3words.com', desc: 'Type the three words (with or without the leading ///) into the search bar, then switch to satellite view to see buildings and landmarks around the pin.' },
-    ],
-    briefing: {
-      sections: [
-        {
-          heading: 'Situation',
-          body: 'what3words divides the planet into 3m × 3m squares, each with a unique three-word address. Emergency services and delivery companies already use it; as an OSINT analyst you may encounter one in a social post or a comms log. Both addresses below are UNG Dahlonega campus buildings.',
+        briefing: {
+          sections: [
+            {
+              heading: 'Situation',
+              body: 'what3words divides the planet into 3m × 3m squares, each with a unique three-word address. Emergency services and delivery companies already use it; as an OSINT analyst you may encounter one in a social post or a comms log. Both addresses below are UNG Dahlonega campus buildings.',
+            },
+          ],
         },
-      ],
-    },
-    // Trimmed to two on-campus buildings, both w3w addresses supplied and
-    // verified by Joshua directly (not guide placeholders).
-    parts: [
-      {
-        id: 'q1-dining-hall',
-        title: '///stepfather.animates.astonish',
-        difficulty: 'easy',
-        points: 15,
-        desc: 'What is the name of this UNG dining facility, and what is it commonly called by students?',
-      },
-      {
-        id: 'q2-cottrell-center',
-        title: '///unfortunately.airship.subscribers',
-        difficulty: 'easy',
-        points: 15,
-        desc: 'What is the name of this UNG building? What academic programs does it house?',
-        hints: [
-          { text: 'Both locations in this challenge are UNG\'s Dahlonega campus buildings.', cost: 2 },
+        // Trimmed to two on-campus buildings, both w3w addresses supplied and
+        // verified by Joshua directly (not guide placeholders).
+        parts: [
+          {
+            id: 'w3w-q1-dining-hall',
+            title: '///stepfather.animates.astonish',
+            difficulty: 'easy',
+            points: 15,
+            desc: 'What is the name of this UNG dining facility, and what is it commonly called by students?',
+          },
+          {
+            id: 'w3w-q2-cottrell-center',
+            title: '///unfortunately.airship.subscribers',
+            difficulty: 'easy',
+            points: 15,
+            desc: 'What is the name of this UNG building? What academic programs does it house?',
+            hints: [
+              { text: 'Both locations in this challenge are UNG\'s Dahlonega campus buildings.', cost: 2 },
+            ],
+          },
         ],
       },
-    ],
-    ethicsNotice: false,
-  },
-  {
-    id: 'osint-whois-dns',
-    title: 'WHOIS / DNS Reconnaissance',
-    category: 'OSINT',
-    difficulty: 'Intermediate',
-    shortDesc: "Map the UNG Cyber Unit's own domain — registrar, nameservers, mail, and subdomains.",
-    pageUrl: '/labs/osint/whois-dns',
-    toolbox: [
-      { name: 'who.is', desc: 'Web-based WHOIS lookup — registrar, registration dates, nameservers.' },
-      { name: 'dig / nslookup', desc: '`dig A/MX/TXT/NS ungcyberunit.org` for the equivalent DNS records from a terminal.' },
-      { name: 'dnsdumpster.com', desc: 'A faster way to enumerate subdomains than guessing prefixes one at a time.' },
-    ],
-    briefing: {
-      sections: [
-        {
-          heading: 'Situation',
-          body: "Every domain has a WHOIS record (registrar, creation/expiration dates, nameservers) and DNS records (A, MX, NS, TXT) showing what it points to and how its email is handled. This is often the first step in mapping an organization's digital footprint — and the target here is the club's own real domain, ungcyberunit.org.",
+      {
+        title: 'WHOIS / DNS Reconnaissance',
+        toolbox: [
+          { name: 'who.is', desc: 'Web-based WHOIS lookup — registrar, registration dates, nameservers.' },
+          { name: 'dig / nslookup', desc: '`dig A/MX/TXT/NS ungcyberunit.org` for the equivalent DNS records from a terminal.' },
+          { name: 'dnsdumpster.com', desc: 'A faster way to enumerate subdomains than guessing prefixes one at a time.' },
+        ],
+        briefing: {
+          sections: [
+            {
+              heading: 'Situation',
+              body: "Every domain has a WHOIS record (registrar, creation/expiration dates, nameservers) and DNS records (A, MX, NS, TXT) showing what it points to and how its email is handled. This is often the first step in mapping an organization's digital footprint — and the target here is the club's own real domain, ungcyberunit.org.",
+            },
+          ],
         },
-      ],
-    },
-    // NOTE: WHOIS/DNS values below are current as of Implementation
-    // Guide.md's writing (2026-10-29) — manual TODO: re-verify with `whois`/
-    // `dig` before each semester's lab, since expiration/IP/MX data drifts.
-    parts: [
-      {
-        id: 'q1-registrar',
-        title: 'Find the Registrar',
-        difficulty: 'easy',
-        points: 5,
-        desc: 'Who is the registrar for ungcyberunit.org?',
-      },
-      {
-        id: 'q2-created',
-        title: 'Find the Registration Date',
-        difficulty: 'easy',
-        points: 5,
-        desc: 'When was the domain first registered?',
-      },
-      {
-        id: 'q3-expires',
-        title: 'Find the Expiration Date',
-        difficulty: 'easy',
-        points: 5,
-        desc: 'When does the registration expire?',
-      },
-      {
-        id: 'q4-nameservers',
-        title: 'Find the Nameservers',
-        difficulty: 'medium',
-        points: 10,
-        desc: 'What nameservers does the domain use? What does this tell you about the hosting infrastructure?',
-        hints: [
-          { text: 'The nameservers tell you what CDN or hosting provider the domain uses.', cost: 2 },
+        // NOTE: WHOIS/DNS values below are current as of Implementation
+        // Guide.md's writing (2026-10-29) — manual TODO: re-verify with `whois`/
+        // `dig` before each semester's lab, since expiration/IP/MX data drifts.
+        parts: [
+          {
+            id: 'wd-q1-registrar',
+            title: 'Find the Registrar',
+            difficulty: 'easy',
+            points: 5,
+            desc: 'Who is the registrar for ungcyberunit.org?',
+          },
+          {
+            id: 'wd-q2-created',
+            title: 'Find the Registration Date',
+            difficulty: 'easy',
+            points: 5,
+            desc: 'When was the domain first registered?',
+          },
+          {
+            id: 'wd-q3-expires',
+            title: 'Find the Expiration Date',
+            difficulty: 'easy',
+            points: 5,
+            desc: 'When does the registration expire?',
+          },
+          {
+            id: 'wd-q4-nameservers',
+            title: 'Find the Nameservers',
+            difficulty: 'medium',
+            points: 10,
+            desc: 'What nameservers does the domain use? What does this tell you about the hosting infrastructure?',
+            hints: [
+              { text: 'The nameservers tell you what CDN or hosting provider the domain uses.', cost: 2 },
+            ],
+          },
+          {
+            id: 'wd-q5-a-record',
+            title: "Find the A Record",
+            difficulty: 'easy',
+            points: 5,
+            gradingMode: 'manual',
+            desc: 'What is the A record (IP address) for ungcyberunit.org? (`dig A ungcyberunit.org` or nslookup — this can change, so it\'s reviewed rather than auto-checked.)',
+          },
+          {
+            id: 'wd-q6-mx-record',
+            title: 'Find the MX Records',
+            difficulty: 'easy',
+            points: 5,
+            gradingMode: 'manual',
+            desc: 'Are there MX records (mail servers)? If so, what service handles email? (`dig MX ungcyberunit.org`)',
+          },
+          {
+            id: 'wd-q7-txt-record',
+            title: 'Find the TXT Records',
+            difficulty: 'easy',
+            points: 5,
+            gradingMode: 'manual',
+            desc: 'Are there any TXT records? What can you learn from them (SPF policy, domain verification, etc.)? (`dig TXT ungcyberunit.org`)',
+          },
+          {
+            id: 'wd-q8-subdomains',
+            title: 'Discover Subdomains',
+            difficulty: 'medium',
+            points: 10,
+            gradingMode: 'manual',
+            desc: 'Try common prefixes (www, mail, blog, api, old, dev) against ungcyberunit.org. Which ones resolve?',
+            hints: [
+              { text: 'If WHOIS shows "REDACTED FOR PRIVACY," that\'s a finding in itself — note it.', cost: 2 },
+            ],
+          },
         ],
       },
       {
-        id: 'q5-a-record',
-        title: "Find the A Record",
-        difficulty: 'easy',
-        points: 5,
-        gradingMode: 'manual',
-        desc: 'What is the A record (IP address) for ungcyberunit.org? (`dig A ungcyberunit.org` or nslookup — this can change, so it\'s reviewed rather than auto-checked.)',
-      },
-      {
-        id: 'q6-mx-record',
-        title: 'Find the MX Records',
-        difficulty: 'easy',
-        points: 5,
-        gradingMode: 'manual',
-        desc: 'Are there MX records (mail servers)? If so, what service handles email? (`dig MX ungcyberunit.org`)',
-      },
-      {
-        id: 'q7-txt-record',
-        title: 'Find the TXT Records',
-        difficulty: 'easy',
-        points: 5,
-        gradingMode: 'manual',
-        desc: 'Are there any TXT records? What can you learn from them (SPF policy, domain verification, etc.)? (`dig TXT ungcyberunit.org`)',
-      },
-      {
-        id: 'q8-subdomains',
-        title: 'Discover Subdomains',
-        difficulty: 'medium',
-        points: 10,
-        gradingMode: 'manual',
-        desc: 'Try common prefixes (www, mail, blog, api, old, dev) against ungcyberunit.org. Which ones resolve?',
-        hints: [
-          { text: 'If WHOIS shows "REDACTED FOR PRIVACY," that\'s a finding in itself — note it.', cost: 2 },
-        ],
-      },
-    ],
-    ethicsNotice: false,
-  },
-  {
-    id: 'osint-web-archaeology',
-    title: 'Web Archaeology',
-    category: 'OSINT',
-    difficulty: 'Advanced',
-    // Deliberately the lab's culminating challenge: highest point value,
-    // highest difficulty, and last in both ctfModules order (drives the
-    // hub grid and prev/next nav) and the /labs/osint hub's own card order.
-    shortDesc: "The OSINT lab's capstone — dig through a real, still-live 1999-era personal website for details its author never meant to leave exposed.",
-    pageUrl: '/labs/osint/web-archaeology',
-    target: {
-      url: 'https://blog.acklenx.com',
-      label: 'blog.acklenx.com',
-      desc: 'Start here, then find the link to the "old" 1999 site in the top navigation',
-      icon: '🗄️',
-    },
-    toolbox: [
-      { name: 'View Page Source (Ctrl+U)', desc: 'Raw HTML, including anything left behind in <meta> tags that never renders on the page itself — essential for this challenge.' },
-    ],
-    briefing: {
-      sections: [
-        {
-          heading: 'Situation',
-          body: "This is the lab's final and most involved challenge — it draws on the same instincts as the first three (reading between the lines, checking everywhere information might hide) and asks for more of it. People have been putting personal information online since the mid-1990s. Old personal sites were hand-built in raw HTML and often include details an author would never post today. Your target is a real 1999-era personal website that is still live — start at blog.acklenx.com, find the \"old\" site link in the nav, and explore every page, reading the HTML source as you go.",
+        // Deliberately the lab's culminating section: highest point value,
+        // highest difficulty, and last in order — it draws on the same
+        // instincts as the first three and asks for more of it.
+        title: 'Web Archaeology (Capstone)',
+        target: {
+          url: 'https://blog.acklenx.com',
+          label: 'blog.acklenx.com',
+          desc: 'Start here, then find the link to the "old" 1999 site in the top navigation',
+          icon: '🗄️',
         },
-      ],
-    },
-    parts: [
-      { id: 'q1-author-name', title: "Find the Author's Name", difficulty: 'easy', points: 5, desc: "What is the site author's full name?" },
-      {
-        id: 'q2-meta-email', title: 'Find the Meta-Tag Email', difficulty: 'medium', points: 10,
-        desc: 'What email address is listed in the HTML meta tags of the main 1999 page? (View Page Source.)',
-        hints: [{ text: 'The <meta> tags in the <head> contain email, keywords, and editor info not visible on the rendered page.', cost: 2 }],
+        toolbox: [
+          { name: 'View Page Source (Ctrl+U)', desc: 'Raw HTML, including anything left behind in <meta> tags that never renders on the page itself — essential for this challenge.' },
+        ],
+        briefing: {
+          sections: [
+            {
+              heading: 'Situation',
+              body: "This is the lab's final and most involved section — it draws on the same instincts as the first three (reading between the lines, checking everywhere information might hide) and asks for more of it. People have been putting personal information online since the mid-1990s. Old personal sites were hand-built in raw HTML and often include details an author would never post today. Your target is a real 1999-era personal website that is still live — start at blog.acklenx.com, find the \"old\" site link in the nav, and explore every page, reading the HTML source as you go.",
+            },
+          ],
+        },
+        parts: [
+          { id: 'wa-q1-author-name', title: "Find the Author's Name", difficulty: 'easy', points: 5, desc: "What is the site author's full name?" },
+          {
+            id: 'wa-q2-meta-email', title: 'Find the Meta-Tag Email', difficulty: 'medium', points: 10,
+            desc: 'What email address is listed in the HTML meta tags of the main 1999 page? (View Page Source.)',
+            hints: [{ text: 'The <meta> tags in the <head> contain email, keywords, and editor info not visible on the rendered page.', cost: 2 }],
+          },
+          { id: 'wa-q3-html-editor', title: 'Find the HTML Editor', difficulty: 'easy', points: 5, desc: 'What HTML editor was used to build the site? (Check the meta tags.)' },
+          { id: 'wa-q4-military-branch', title: 'Find the Military Branch', difficulty: 'easy', points: 5, desc: "What branch of the U.S. military did the author serve in?" },
+          {
+            id: 'wa-q5-home-address', title: "Find the Resume Address", difficulty: 'medium', points: 10,
+            desc: "What was the author's home address (street, city, state, ZIP) per the resume page?",
+            hints: [{ text: "The resume page has the most sensitive information — address, phone, employment history.", cost: 2 }],
+          },
+          { id: 'wa-q6-places-lived', title: 'Find Places Lived', difficulty: 'medium', points: 10, gradingMode: 'manual', desc: "List three states or countries where the author has lived." },
+          { id: 'wa-q7-favorite-book', title: 'Find the Favorite Book', difficulty: 'easy', points: 5, desc: "What is the author's favorite book, and who wrote it?" },
+          { id: 'wa-q8-favorite-movie', title: 'Find the Favorite Movie', difficulty: 'easy', points: 5, desc: "What is the author's favorite movie — specifically, the one made in 1992?" },
+          { id: 'wa-q9-hobbies', title: 'Find Two Unexpected Hobbies', difficulty: 'easy', points: 5, gradingMode: 'manual', desc: "Name two hobbies from the site that you wouldn't expect." },
+          {
+            id: 'wa-q10-phone-bonus', title: 'BONUS: Decode the Phone Number', difficulty: 'hard', points: 15, gradingMode: 'manual',
+            desc: 'What phone number appears on the resume? What area code is it, and what region does that area code cover?',
+            hints: [{ text: 'For the area-code lookup, just search the area code itself.', cost: 2 }],
+          },
+        ],
       },
-      { id: 'q3-html-editor', title: 'Find the HTML Editor', difficulty: 'easy', points: 5, desc: 'What HTML editor was used to build the site? (Check the meta tags.)' },
-      { id: 'q4-military-branch', title: 'Find the Military Branch', difficulty: 'easy', points: 5, desc: "What branch of the U.S. military did the author serve in?" },
-      {
-        id: 'q5-home-address', title: "Find the Resume Address", difficulty: 'medium', points: 10,
-        desc: "What was the author's home address (street, city, state, ZIP) per the resume page?",
-        hints: [{ text: "The resume page has the most sensitive information — address, phone, employment history.", cost: 2 }],
-      },
-      { id: 'q6-places-lived', title: 'Find Places Lived', difficulty: 'medium', points: 10, gradingMode: 'manual', desc: "List three states or countries where the author has lived." },
-      { id: 'q7-favorite-book', title: 'Find the Favorite Book', difficulty: 'easy', points: 5, desc: "What is the author's favorite book, and who wrote it?" },
-      { id: 'q8-favorite-movie', title: 'Find the Favorite Movie', difficulty: 'easy', points: 5, desc: "What is the author's favorite movie — specifically, the one made in 1992?" },
-      { id: 'q9-hobbies', title: 'Find Two Unexpected Hobbies', difficulty: 'easy', points: 5, gradingMode: 'manual', desc: "Name two hobbies from the site that you wouldn't expect." },
-      {
-        id: 'q10-phone-bonus', title: 'BONUS: Decode the Phone Number', difficulty: 'hard', points: 15, gradingMode: 'manual',
-        desc: 'What phone number appears on the resume? What area code is it, and what region does that area code cover?',
-        hints: [{ text: 'For the area-code lookup, just search the area code itself.', cost: 2 }],
-      },
-    ],
-    ethicsNotice: false,
-  },
+    ];
+
+    return {
+      id: 'osint',
+      title: 'Introduction to OSINT',
+      category: 'OSINT',
+      difficulty: 'Intermediate',
+      shortDesc: 'Four open-source intelligence challenges in one: reverse image search, geocoding, WHOIS/DNS recon, and a Web Archaeology capstone.',
+      pageUrl: '/challenges/osint',
+      sections,
+      parts: sections.flatMap(s => s.parts),
+      ethicsNotice: false,
+    };
+  })(),
 ];
 
 // SEO meta block for a generic (new-style) CTF module page, same shape as
@@ -466,17 +459,12 @@ export function challengeModuleMetaTags(m) {
   const desc = escapeHtml(`${m.shortDesc} A CTF-style cybersecurity challenge from the UNG Cyber Unit.`);
   const canonical = `https://ungcyberunit.org${m.pageUrl}`;
   const image = 'https://ungcyberunit.org/images/CyberUnitLogo_Transparent.png';
-  // The OSINT lab's modules live under their own hub (/labs/osint), not the
-  // main CTF Challenges hub, so their breadcrumb's second step differs.
-  const hub = m.pageUrl.startsWith('/labs/osint/')
-    ? { name: 'Introduction to OSINT', item: 'https://ungcyberunit.org/labs/osint' }
-    : { name: 'CTF Challenges', item: 'https://ungcyberunit.org/challenges' };
   const breadcrumb = JSON.stringify({
     '@context': 'https://schema.org',
     '@type': 'BreadcrumbList',
     itemListElement: [
       { '@type': 'ListItem', position: 1, name: 'Home', item: 'https://ungcyberunit.org/' },
-      { '@type': 'ListItem', position: 2, name: hub.name, item: hub.item },
+      { '@type': 'ListItem', position: 2, name: 'CTF Challenges', item: 'https://ungcyberunit.org/challenges' },
       { '@type': 'ListItem', position: 3, name: m.title, item: canonical },
     ],
   }).replace(/</g, '\\u003c');
@@ -495,37 +483,12 @@ export function challengeModuleMetaTags(m) {
   ].join('\n  ');
 }
 
-// Full server-rendered body content for a generic CTF module page — briefing,
-// downloads, toolbox, challenge parts, optional ethics notice. Injected into
-// public/challenge-module.html's placeholder by the /challenges/:id route.
-// No client re-render needed (unlike topics): this content is fully static
-// per module, main.js only layers on progress/submit behavior afterward.
-export function renderChallengeModule(m) {
-  const downloads = (m.downloads ?? []).map(d => `
-          <a class="card lac-download-card" href="/challenges/${m.id}/${d.filename}" download>
-            <span class="lac-download-icon" aria-hidden="true">${d.icon ?? '📁'}</span>
-            <span class="lac-download-name">${escapeHtml(d.label)}</span>
-            <span class="lac-download-desc">${escapeHtml(d.desc)}</span>
-          </a>`).join('');
-
-  const toolbox = (m.toolbox ?? []).map(t => `
-          <div class="card lac-tool">
-            <span class="lac-tool-name">${escapeHtml(t.name)}</span>
-            <span class="lac-tool-desc">${escapeHtml(t.desc)}</span>
-          </div>`).join('');
-
-  const briefingHtml = (m.briefing?.sections ?? []).map(s => `
-        <h2 class="instructor-section-heading">// ${escapeHtml(s.heading)}</h2>
-        <p style="color: var(--text-muted); font-size: 0.9rem; margin: 0.5rem 0 1.5rem;">${escapeHtml(s.body)}</p>`).join('');
-
-  const ethics = m.ethicsNotice ? `
-      <div class="card lac-ethics" style="margin-bottom: 2rem;">
-        <strong>Stay in scope.</strong> Every artifact here is synthetic — built for this
-        challenge, not captured from a real system. Apply the same techniques
-        only against systems you own or are explicitly authorized to test.
-      </div>` : '';
-
-  const parts = (m.parts ?? []).map((p, i) => {
+// One challenge-part card (the submit form, hints, points pill, etc.) —
+// extracted so a composite module (OSINT: one page, 4 sub-challenge
+// sections) can render several independently-numbered part lists, one per
+// section, instead of a single flat list.
+function renderPartsList(parts) {
+  return (parts ?? []).map((p, i) => {
     const hints = (p.hints ?? []).map((h, hi) => `
             <div class="lac-hint" data-hint-index="${hi}" data-hint-cost="${h.cost ?? DEFAULT_HINT_COST}">
               <button type="button" class="lac-hint-toggle">Hint ${hi + 1} (-${h.cost ?? DEFAULT_HINT_COST} pts)</button>
@@ -563,18 +526,44 @@ export function renderChallengeModule(m) {
           ${submit}
         </div>`;
   }).join('');
+}
+
+// Downloads/toolbox/briefing/target/images/parts for one "section" of
+// content — a whole legacy module (single-section), or one sub-challenge of
+// a composite module like OSINT (one page, several sections). `includeSummary`
+// places the shared #challengeProgressSummary span inline here (legacy,
+// single-section pages) — composite pages place exactly one of these at the
+// page level instead, since the id must be unique and the score spans every
+// section, not just one.
+function renderSectionBody(s, { includeSummary = true } = {}) {
+  const downloads = (s.downloads ?? []).map(d => `
+          <a class="card lac-download-card" href="/challenges/${s.moduleId}/${d.filename}" download>
+            <span class="lac-download-icon" aria-hidden="true">${d.icon ?? '📁'}</span>
+            <span class="lac-download-name">${escapeHtml(d.label)}</span>
+            <span class="lac-download-desc">${escapeHtml(d.desc)}</span>
+          </a>`).join('');
+
+  const toolbox = (s.toolbox ?? []).map(t => `
+          <div class="card lac-tool">
+            <span class="lac-tool-name">${escapeHtml(t.name)}</span>
+            <span class="lac-tool-desc">${escapeHtml(t.desc)}</span>
+          </div>`).join('');
+
+  const briefingHtml = (s.briefing?.sections ?? []).map(sec => `
+        <h2 class="instructor-section-heading">// ${escapeHtml(sec.heading)}</h2>
+        <p style="color: var(--text-muted); font-size: 0.9rem; margin: 0.5rem 0 1.5rem;">${escapeHtml(sec.body)}</p>`).join('');
 
   // Live-target modules (e.g. web exploitation) attack a real running app
   // instead of a downloaded file — no "Download" section for those, a
   // "Target" section with a link to the live app instead.
-  const targetSection = m.target ? `
+  const targetSection = s.target ? `
       <section class="instructor-section">
         <h2 class="instructor-section-heading">// Target</h2>
         <div class="lac-downloads">
-          <a class="card lac-download-card" href="${m.target.url}" target="_blank" rel="noopener noreferrer">
-            <span class="lac-download-icon" aria-hidden="true">${m.target.icon ?? '🎯'}</span>
-            <span class="lac-download-name">${escapeHtml(m.target.label)}</span>
-            <span class="lac-download-desc">${escapeHtml(m.target.desc)}</span>
+          <a class="card lac-download-card" href="${s.target.url}" target="_blank" rel="noopener noreferrer">
+            <span class="lac-download-icon" aria-hidden="true">${s.target.icon ?? '🎯'}</span>
+            <span class="lac-download-name">${escapeHtml(s.target.label)}</span>
+            <span class="lac-download-desc">${escapeHtml(s.target.desc)}</span>
           </a>
         </div>
       </section>` : '';
@@ -590,11 +579,11 @@ export function renderChallengeModule(m) {
   // source/host copyrighted landmark photos here), so this renders the slot
   // and caption now; a broken-image icon is expected until the real files
   // land at /assets/labs/osint/images/.
-  const imagesSection = (m.images?.length) ? `
+  const imagesSection = (s.images?.length) ? `
       <section class="instructor-section">
         <h2 class="instructor-section-heading">// Images</h2>
         <div class="lac-image-gallery">
-          ${m.images.map((img, i) => `
+          ${s.images.map((img, i) => `
           <figure class="card lac-image-card">
             <img src="/assets/labs/osint/images/${escapeHtml(img.filename)}" alt="${escapeHtml(img.caption ?? `Image ${i + 1}`)}" loading="lazy">
             <figcaption>${escapeHtml(img.caption ?? `Image ${i + 1}`)}</figcaption>
@@ -602,7 +591,68 @@ export function renderChallengeModule(m) {
         </div>
       </section>` : '';
 
+  const parts = renderPartsList(s.parts);
+
+  return `
+      ${targetSection}
+      ${downloadsSection}
+      ${imagesSection}
+
+      ${toolbox ? `<section class="instructor-section">
+        <h2 class="instructor-section-heading">// Your Toolbox</h2>
+        <div class="lac-toolbox">${toolbox}</div>
+      </section>` : ''}
+
+      ${briefingHtml ? `<section class="instructor-section">${briefingHtml}</section>` : ''}
+
+      <section class="instructor-section">
+        <h2 class="instructor-section-heading">// The Challenge${(s.parts?.length ?? 0) > 1 ? 's' : ''}</h2>
+        ${includeSummary ? `<p style="color: var(--text-muted); font-size: 0.9rem; margin: 0.5rem 0 1rem;">
+          <span id="challengeProgressSummary" class="lac-progress-summary" hidden></span>
+        </p>` : ''}
+        ${parts}
+      </section>`;
+}
+
+// Full server-rendered body content for a generic CTF module page — briefing,
+// downloads, toolbox, challenge parts, optional ethics notice. Injected into
+// public/challenge-module.html's placeholder by the /challenges/:id route.
+// No client re-render needed (unlike topics): this content is fully static
+// per module, main.js only layers on progress/submit behavior afterward.
+//
+// Two shapes: a plain module (toolbox/briefing/parts/etc. at the top level,
+// one "// The Challenges" block — every existing module) or a composite one
+// with `m.sections` (OSINT: one page, one card on /challenges, but a
+// separate titled section — own briefing/toolbox/parts — per sub-challenge).
+// `m.parts` always stays the full flattened list either way (set directly on
+// composite modules, same as any other), so CHALLENGE_PARTS/
+// CHALLENGE_PART_POINTS/the leaderboard/progress endpoints need no awareness
+// of sections at all — only this renderer does.
+export function renderChallengeModule(m) {
+  const ethics = m.ethicsNotice ? `
+      <div class="card lac-ethics" style="margin-bottom: 2rem;">
+        <strong>Stay in scope.</strong> Every artifact here is synthetic — built for this
+        challenge, not captured from a real system. Apply the same techniques
+        only against systems you own or are explicitly authorized to test.
+      </div>` : '';
+
   const maxPoints = (m.parts ?? []).reduce((sum, p) => sum + (typeof p === 'string' ? 0 : (p.points ?? 0)), 0);
+
+  const body = m.sections
+    ? [
+        `<section class="instructor-section">
+          <p style="color: var(--text-muted); font-size: 0.9rem; margin: 0;">
+            <span id="challengeProgressSummary" class="lac-progress-summary" hidden></span>
+          </p>
+        </section>`,
+        ...m.sections.map((s, i) => `
+      <section class="instructor-section lac-module-section">
+        <h2 class="lac-module-section-heading">${i + 1}. ${escapeHtml(s.title)}</h2>
+        ${s.intro ? `<p style="color: var(--text-muted); font-size: 0.9rem; margin: 0.25rem 0 1rem;">${escapeHtml(s.intro)}</p>` : ''}
+      </section>
+      ${renderSectionBody({ ...s, moduleId: m.id }, { includeSummary: false })}`),
+      ].join('\n')
+    : renderSectionBody({ ...m, moduleId: m.id });
 
   return `
       <header style="margin-bottom: 1.5rem;">
@@ -617,24 +667,7 @@ export function renderChallengeModule(m) {
       </header>
 
       ${ethics}
-      ${targetSection}
-      ${downloadsSection}
-      ${imagesSection}
-
-      <section class="instructor-section">
-        <h2 class="instructor-section-heading">// Your Toolbox</h2>
-        <div class="lac-toolbox">${toolbox}</div>
-      </section>
-
-      ${briefingHtml ? `<section class="instructor-section">${briefingHtml}</section>` : ''}
-
-      <section class="instructor-section">
-        <h2 class="instructor-section-heading">// The Challenge${(m.parts?.length ?? 0) > 1 ? 's' : ''}</h2>
-        <p style="color: var(--text-muted); font-size: 0.9rem; margin: 0.5rem 0 1rem;">
-          <span id="challengeProgressSummary" class="lac-progress-summary" hidden></span>
-        </p>
-        ${parts}
-      </section>
+      ${body}
 
       <section class="instructor-section" id="answerKeySection" hidden>
         <h2 class="instructor-section-heading">// Instructor Answer Key</h2>
@@ -646,27 +679,19 @@ export function renderChallengeModule(m) {
 
 // Prev/next/hub navigation, shown at the bottom of every CTF module page
 // (both new-style and the two legacy pages) — wraps around at the ends.
-// The OSINT lab's 4 modules cycle only among themselves (back to /labs/osint,
-// not the main CTF hub) since they're a separate lab, not part of that list;
-// every other module cycles through the full ctfModules order, the same
-// order the /challenges hub lists them in.
+// Order follows ctfModules array order, the same order the hub lists them in.
 export function challengeModuleNavHtml(currentId) {
-  const inOsintLab = osintModules.some(m => m.id === currentId);
-  const list = inOsintLab ? osintModules : ctfModules.filter(m => m.category !== 'OSINT');
-  const hubUrl = inOsintLab ? '/labs/osint' : '/challenges';
-  const hubLabel = inOsintLab ? 'OSINT Lab' : 'All Challenges';
-
-  const idx = list.findIndex(m => m.id === currentId);
+  const idx = ctfModules.findIndex(m => m.id === currentId);
   if (idx === -1) return '';
-  const prev = list[(idx - 1 + list.length) % list.length];
-  const next = list[(idx + 1) % list.length];
+  const prev = ctfModules[(idx - 1 + ctfModules.length) % ctfModules.length];
+  const next = ctfModules[(idx + 1) % ctfModules.length];
   return `
       <nav class="lac-module-nav" aria-label="Other CTF challenges">
         <a href="${prev.pageUrl}" class="lac-module-nav-link lac-module-nav-link--prev">
           <span class="lac-module-nav-arrow" aria-hidden="true">←</span>
           <span class="lac-module-nav-text"><span class="lac-module-nav-label">Previous</span>${escapeHtml(prev.title)}</span>
         </a>
-        <a href="${hubUrl}" class="lac-module-nav-hub">${hubLabel}</a>
+        <a href="/challenges" class="lac-module-nav-hub">All Challenges</a>
         <a href="${next.pageUrl}" class="lac-module-nav-link lac-module-nav-link--next">
           <span class="lac-module-nav-text"><span class="lac-module-nav-label">Next</span>${escapeHtml(next.title)}</span>
           <span class="lac-module-nav-arrow" aria-hidden="true">→</span>
@@ -691,22 +716,10 @@ export function challengeCard(m) {
         </a>`;
 }
 
-// The OSINT lab has its own dedicated hub (/labs/osint, see osintLabCards()
-// below) — excluded here so its 4 modules aren't double-listed on the main
-// /challenges hub too.
-export const osintModules = ctfModules.filter(m => m.category === 'OSINT');
-
 // Server-rendered hub grid so crawlers/no-JS users see every module without
 // depending on a client-side fetch — same philosophy as homeTopicCards().
 export function challengesHubCards() {
-  return ctfModules.filter(m => m.category !== 'OSINT').map(challengeCard).join('\n        ');
-}
-
-// The 4-module OSINT lab grid for /labs/osint — same card/progress machinery
-// as the main /challenges hub, just filtered to the 'OSINT' category instead
-// of listing every module.
-export function osintLabCards() {
-  return osintModules.map(challengeCard).join('\n        ');
+  return ctfModules.map(challengeCard).join('\n        ');
 }
 
 export const CHALLENGE_PARTS = Object.fromEntries(

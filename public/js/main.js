@@ -3695,43 +3695,6 @@ async function initChallengeHints(challengeId, controller) {
   });
 }
 
-// ─── OSINT Lab Hub (/labs/osint) ────────────────────────────────────────────
-// Same progressive-enhancement shape as initChallengesHub() — server-rendered
-// cards stay intact on any fetch failure — but rolls up a points-based score
-// across the 4 OSINT modules instead of a per-card "N/total parts" count.
-async function initOsintLabHub() {
-  const cards = document.querySelectorAll('#osintGrid .card[data-challenge]');
-  if (!cards.length || !currentUser) return;
-
-  let scoreTotal = 0;
-  let maxPointsTotal = 0;
-  await Promise.all([...cards].map(async card => {
-    const id = card.dataset.challenge;
-    const total = parseInt(card.dataset.totalParts, 10) || 0;
-    try {
-      const res = await fetch(`/api/challenges/${id}/progress`);
-      if (!res.ok) return;
-      const data = await res.json();
-      maxPointsTotal += data.maxPoints ?? 0;
-      scoreTotal += data.score ?? 0;
-      const done = (data.completed ?? []).length;
-      if (done === 0) return;
-      card.classList.toggle('card-completed', done === total);
-      const badge = document.createElement('div');
-      badge.className = 'card-progress';
-      badge.setAttribute('aria-label', `${done} of ${total} questions complete`);
-      badge.innerHTML = `${done}/${total}${done === total ? ' <span class="progress-star" aria-hidden="true">★</span>' : ''}`;
-      card.prepend(badge);
-    } catch { /* leave the server-rendered card as-is */ }
-  }));
-
-  const summary = document.getElementById('osintScoreSummary');
-  if (summary && (scoreTotal > 0 || maxPointsTotal > 0)) {
-    summary.textContent = `${scoreTotal} / ${maxPointsTotal} pts`;
-    summary.hidden = false;
-  }
-}
-
 // ─── Student Hub ────────────────────────────────────────────────────────────
 
 async function initStudentHubPage() {
@@ -4930,13 +4893,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   } else if (window.location.pathname === '/challenges') {
     initChallengesHub();
     loadCtfHubLeaderboard();
-  } else if (window.location.pathname === '/labs/osint') {
-    initOsintLabHub();
-  } else if (/^\/challenges\/[\w-]+$/.test(window.location.pathname) || /^\/labs\/osint\/[\w-]+$/.test(window.location.pathname)) {
+  } else if (/^\/challenges\/[\w-]+$/.test(window.location.pathname)) {
     // Generic module page — the challenge id is server-injected into
     // <body data-challenge-id>, so this one branch covers every new-style
-    // module (both /challenges/:id and /labs/osint/:slug) instead of
-    // needing an else-if per module like the two legacy pages above.
+    // module instead of needing an else-if per module like the two legacy
+    // pages above.
     const challengeId = document.body.dataset.challengeId;
     if (challengeId) {
       initChallengeAnswerKeyToggle();

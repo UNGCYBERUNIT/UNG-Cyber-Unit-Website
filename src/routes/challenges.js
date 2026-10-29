@@ -48,8 +48,9 @@ export async function handleChallengesRoutes(request, env, url, path, secureCook
   // GET /api/challenges/:id/progress — which parts this session has
   // completed, which hints it's paid to reveal, and the resulting points
   // score (completed-part points minus revealed-hint costs) — computed here
-  // rather than in the client so the module page and the /labs/osint hub
-  // page both get the same number from one place. Any session incl. guest
+  // rather than in the client so every consumer (the module page, the
+  // /challenges hub's per-card badge) gets the same number from one place.
+  // Any session incl. guest
   // (matches /api/progress's pattern for topic quizzes) — returns empty/zero
   // rather than an error when signed out, so the page can render normally
   // either way.

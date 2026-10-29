@@ -14,7 +14,6 @@ import {
   renderChallengeModule,
   challengeModuleNavHtml,
   challengesHubCards,
-  osintLabCards,
 } from '../data/challenges.js';
 
 // HTML view routes → serve from views/ via the [assets] binding, with
@@ -45,8 +44,6 @@ export async function handlePagesRoutes(request, env, url, path, secureCookie) {
     '/challenges': '/challenges',
     '/lab/web-exploitation-portal': '/lab/web-exploitation-portal',
     '/lab/staging-notes': '/lab/staging-notes',
-    '/labs': '/labs',
-    '/labs/osint': '/labs-osint',
   };
 
   // topic/:id — any path matching /topic/<something>
@@ -68,11 +65,6 @@ export async function handlePagesRoutes(request, env, url, path, secureCookie) {
   // modules' ids resolve via their own pageUrl (viewRoutes above), not
   // this path, so requesting a legacy id here falls through to 404 below.
   const challengeModulePageMatch = path.match(/^\/challenges\/([\w-]+)$/);
-  // labs/osint/:slug — the OSINT lab's own URL scheme, served by the exact
-  // same generic challenge-module shell/renderer as /challenges/:id above,
-  // just matched against a module's pageUrl (/labs/osint/...) instead of
-  // reconstructing /challenges/:id from the slug.
-  const osintModulePageMatch = path.match(/^\/labs\/osint\/[\w-]+$/);
 
   let assetPath = null;
   if (viewRoutes[path] !== undefined) {
@@ -85,13 +77,20 @@ export async function handlePagesRoutes(request, env, url, path, secureCookie) {
     assetPath = '/u';
   } else if (verifyPageMatch) {
     assetPath = '/verify';
-  } else if (challengeModulePageMatch || osintModulePageMatch) {
+  } else if (challengeModulePageMatch) {
     assetPath = '/challenge-module';
   } else if (path === '/sop') {
     assetPath = '/Cyber_Unit_SOP.pdf';
   } else if (path === '/feedback') {
     // Renamed to /contact — redirect any old bookmarks/links.
     return Response.redirect(`${url.origin}/contact`, 301);
+  } else if (path === '/labs' || path === '/labs/osint') {
+    // The OSINT lab briefly lived at its own /labs/osint hub with 4 separate
+    // pages — folded into a single "OSINT" card/page on /challenges so it
+    // matches every other module's format. Redirect the short-lived URLs.
+    return Response.redirect(`${url.origin}/challenges/osint`, 301);
+  } else if (/^\/labs\/osint\/[\w-]+$/.test(path)) {
+    return Response.redirect(`${url.origin}/challenges/osint`, 301);
   } else if (path === '/danica') {
     return new Response('I love you! <3', {
       headers: addSecurityHeaders(new Headers({ 'Content-Type': 'text/plain; charset=utf-8' })),
@@ -187,11 +186,9 @@ export async function handlePagesRoutes(request, env, url, path, secureCookie) {
       // Server-render a generic CTF module page. An id that doesn't
       // exist, or that belongs to a legacy module (whose canonical URL
       // is elsewhere), 404s rather than serving an empty/wrong shell.
-      // Matches both /challenges/:id and /labs/osint/:slug — both resolve a
-      // module purely by pageUrl, never by reconstructing an id from the path.
-      if (challengeModulePageMatch || osintModulePageMatch) {
-        const m = ctfModules.find(x => x.pageUrl === path);
-        if (!m) return notFoundResponse();
+      if (challengeModulePageMatch) {
+        const m = ctfModules.find(x => x.id === challengeModulePageMatch[1]);
+        if (!m || m.pageUrl !== path) return notFoundResponse();
         const html = (await assetResponse.text())
           .replace('<title>CyberUnit @ UNG — Challenge</title>', challengeModuleMetaTags(m))
           .replace('data-challenge-id=""', `data-challenge-id="${m.id}"`)
@@ -205,15 +202,6 @@ export async function handlePagesRoutes(request, env, url, path, secureCookie) {
       if (path === '/challenges') {
         const html = (await assetResponse.text())
           .replace('<!-- Populated by main.js -->', challengesHubCards());
-        headers.delete('Content-Length');
-        headers.set('Content-Type', 'text/html; charset=utf-8');
-        return new Response(html, { status: assetResponse.status, headers });
-      }
-
-      // Server-render the OSINT lab's own 4-card grid into /labs/osint.
-      if (path === '/labs/osint') {
-        const html = (await assetResponse.text())
-          .replace('<!-- Populated by main.js -->', osintLabCards());
         headers.delete('Content-Length');
         headers.set('Content-Type', 'text/html; charset=utf-8');
         return new Response(html, { status: assetResponse.status, headers });

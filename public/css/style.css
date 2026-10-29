@@ -4042,3 +4042,22 @@ footer {
   font-size: 0.78rem;
   color: var(--text-muted);
 }
+
+/* Composite module (e.g. OSINT: one page/card, 4 sub-challenge sections) —
+   a bigger divider than .instructor-section-heading so a section break reads
+   as a step up from the "// Your Toolbox"-style headings nested under it. */
+.lac-module-section {
+  margin-top: 3rem;
+  margin-bottom: 1rem;
+  padding-top: 2rem;
+  border-top: 2px solid var(--accent);
+}
+.lac-module-section:first-of-type {
+  margin-top: 2rem;
+}
+.lac-module-section-heading {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 1.3rem;
+  color: var(--text);
+  margin: 0;
+}

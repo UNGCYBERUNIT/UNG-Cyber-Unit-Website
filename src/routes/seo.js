@@ -43,7 +43,7 @@ export async function handleSeoRoutes(request, env, url, path, secureCookie) {
     // New-style module URLs (/challenges/:id) derive from ctfModules so a
     // future module doesn't need a manual sitemap addition; the two
     // legacy pages stay hardcoded like every other one-off page here.
-    const paths = ['/', '/start', '/about', '/resources', '/sop', '/log-analysis-challenge', '/network-traffic-challenge', '/challenges', '/announcements', '/events', '/labs', '/labs/osint', ...topics.map(t => `/topic/${t.id}`), ...ctfModules.filter(m => m.pageUrl.startsWith('/challenges/') || m.pageUrl.startsWith('/labs/osint/')).map(m => m.pageUrl)];
+    const paths = ['/', '/start', '/about', '/resources', '/sop', '/log-analysis-challenge', '/network-traffic-challenge', '/challenges', '/announcements', '/events', ...topics.map(t => `/topic/${t.id}`), ...ctfModules.filter(m => m.pageUrl.startsWith('/challenges/')).map(m => m.pageUrl)];
     const body = `<?xml version="1.0" encoding="UTF-8"?>\n`
       + `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n`
       + paths.map(p => `  <url><loc>${base}${p}</loc></url>`).join('\n')
