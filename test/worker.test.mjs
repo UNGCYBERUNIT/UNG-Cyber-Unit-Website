@@ -1109,6 +1109,7 @@ describe('GET /robots.txt', () => {
     assert.doesNotMatch(body, /\/admin|\/instructor|\/profile/); // don't advertise private pages
     assert.match(body, /Disallow: \/cheatsheets\//); // raw PDF path stays out of the index
     assert.match(body, /Disallow: \/challenges\/\*\//); // raw challenge asset files stay out of the index
+    assert.match(body, /Disallow: \/assets\//); // raw OSINT lab images stay out of the index
     // The wildcard must not swallow the canonical hub or a module page.
     assert.doesNotMatch(body, /Disallow: \/challenges\/$/m);
   });

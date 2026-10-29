@@ -4095,3 +4095,13 @@ footer {
 .lac-module-section-body {
   margin-top: 1rem;
 }
+
+/* Submission log table (instructor-only) — 6 columns including free-text
+   answer/accepted-answer text, more overflow-prone on narrow screens than
+   the admin users table .admin-table was originally built for. */
+#submissionLogTableWrap {
+  overflow-x: auto;
+}
+#submissionLogTableWrap .admin-table {
+  min-width: 640px;
+}

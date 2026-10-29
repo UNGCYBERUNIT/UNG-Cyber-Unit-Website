@@ -28,6 +28,9 @@ export async function handleSeoRoutes(request, env, url, path, secureCookie) {
       // files are reachable at their static path but only the canonical
       // /cheatsheet/:id route should be indexed.
       'Disallow: /cheatsheets/',
+      // Downloadable OSINT lab images (public/assets/labs/osint/images/) —
+      // raw asset files, not content pages; same reasoning as the two above.
+      'Disallow: /assets/',
       '',
       'Sitemap: https://ungcyberunit.org/sitemap.xml',
       '',
