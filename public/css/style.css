@@ -3972,8 +3972,8 @@ footer {
   .lac-module-nav-link--next { justify-content: flex-start; text-align: left; }
 }
 
-/* OSINT lab additions: per-question points, paid hint reveal, instructor-
-   graded "pending review" state, image galleries. */
+/* OSINT lab additions: per-question points, instructor-graded "pending
+   review" state, image galleries. */
 .lac-points {
   font-family: 'Share Tech Mono', monospace;
   font-size: 0.72rem;
@@ -3984,29 +3984,7 @@ footer {
 }
 .lac-points--header { margin-left: 0.6rem; }
 
-.lac-hints { margin: 0.75rem 0; }
-.lac-hint { margin-bottom: 0.4rem; }
-.lac-hint-toggle {
-  background: none;
-  border: 1px dashed var(--border);
-  border-radius: 6px;
-  color: var(--text-muted);
-  font-family: 'Share Tech Mono', monospace;
-  font-size: 0.78rem;
-  padding: 0.35rem 0.7rem;
-  cursor: pointer;
-  transition: border-color 0.15s, color 0.15s;
-}
-.lac-hint-toggle:hover:not(:disabled) { border-color: #ffbd2e; color: #ffbd2e; }
-.lac-hint-toggle:disabled { opacity: 0.5; cursor: default; }
-.lac-hint-body {
-  margin: 0.4rem 0 0;
-  padding: 0.6rem 0.8rem;
-  background: #1a1a1a;
-  border-left: 3px solid #ffbd2e;
-  font-size: 0.85rem;
-  color: var(--text);
-}
+.lac-desc-highlight { color: var(--accent); }
 
 .lac-manual-note {
   margin: 0.4rem 0 0;

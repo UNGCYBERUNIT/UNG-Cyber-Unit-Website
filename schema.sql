@@ -331,22 +331,6 @@ CREATE TABLE IF NOT EXISTS challenge_submit_rate_limit (
 );
 CREATE INDEX IF NOT EXISTS idx_csrl_user_ts ON challenge_submit_rate_limit (user_id, ts);
 
--- Which (user, challenge, part, hint) hints a user has paid the point-cost to
--- reveal (OSINT lab hint mechanic, POST /api/challenges/:id/hints/reveal).
--- Hint text/cost itself lives in
--- ctfModules (src/data/challenges.js) — not secret, it's meant to be given
--- out — only the "did this user already pay for it" fact is stateful.
--- Idempotent reveal: re-requesting an already-revealed hint never double-charges.
-CREATE TABLE IF NOT EXISTS challenge_hints_revealed (
-  user_id      INTEGER NOT NULL,
-  challenge_id TEXT    NOT NULL,
-  part_id      TEXT    NOT NULL,
-  hint_index   INTEGER NOT NULL,
-  revealed_at  INTEGER NOT NULL,
-  PRIMARY KEY (user_id, challenge_id, part_id, hint_index),
-  FOREIGN KEY (user_id) REFERENCES users(id)
-);
-
 -- Free-text answers for "instructor-graded" challenge parts (gradingMode:
 -- 'manual' in ctfModules) — questions with no single checkable answer (a
 -- live DNS value, "name two hobbies you wouldn't expect"). Never compared

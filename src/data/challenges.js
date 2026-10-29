@@ -224,10 +224,6 @@ export const ctfModules = [
           { filename: 'landmark-01.png', caption: 'Image 1' },
           { filename: 'landmark-02.png', caption: 'Image 2' },
         ],
-        toolbox: [
-          { name: 'Google Lens / Yandex Images / TinEye', desc: 'Try at least two.' },
-          { name: 'Right-click → "Search image with Google"', desc: 'Quickest way in from Chrome.' },
-        ],
         briefing: {
           sections: [
             {
@@ -241,7 +237,7 @@ export const ctfModules = [
         // answer, so each gets its own part. Tool-comparison/source-URL/EXIF
         // questions from the original spec were dropped entirely rather than
         // shrunk, since all three only made sense as instructor-reviewed free
-        // text anyway.
+        // text anyway. No hints/toolbox — a CTF shouldn't hand out either.
         parts: [
           {
             id: 'ri-q1-image-one',
@@ -249,10 +245,6 @@ export const ctfModules = [
             difficulty: 'medium',
             points: 15,
             desc: 'Name the landmark in Image 1 and where it is.',
-            hints: [
-              { text: 'Focus on the detail on the rooftop.', cost: 2 },
-              { text: 'Not in the United States.', cost: 2 },
-            ],
           },
           {
             id: 'ri-q2-image-two',
@@ -260,55 +252,44 @@ export const ctfModules = [
             difficulty: 'medium',
             points: 15,
             desc: 'Name the monument in Image 2 and what it honors.',
-            hints: [
-              { text: "The uniforms are a clue to the branch.", cost: 2 },
-              { text: 'Served in the Korean War.', cost: 2 },
-            ],
           },
         ],
       },
       {
-        title: 'what3words Geocoding',
-        toolbox: [
-          { name: 'what3words.com', desc: 'Paste the three words into the search bar.' },
-        ],
+        title: 'Geocoding',
         briefing: {
           sections: [
             {
               heading: 'Situation',
-              body: 'Two what3words addresses, both UNG Dahlonega campus buildings.',
+              body: 'Two tips below each name a real UNG Dahlonega building — but only in a three-word phrase. Figure out what kind of code that phrase is and where it points.',
             },
           ],
         },
-        // Trimmed to two on-campus buildings, both w3w addresses supplied and
-        // verified by Joshua directly (not guide placeholders).
+        // The service these phrases decode with (what3words) is deliberately
+        // never named anywhere on this page — the three words are embedded in
+        // plain prose, not shown as a "///word.word.word" address or paired
+        // with a "visit this site" toolbox tip, so recognizing the format at
+        // all is part of the challenge. Both phrases supplied and verified by
+        // Joshua directly (not guide placeholders).
         parts: [
           {
             id: 'w3w-q1-dining-hall',
-            title: '///stepfather.animates.astonish',
+            title: 'Decode the First Tip',
             difficulty: 'easy',
             points: 15,
-            desc: 'Name this UNG dining facility and its common nickname.',
+            desc: 'An anonymous note gives a location only as "**stepfather animates astonish**." Name this UNG building and its common nickname.',
           },
           {
             id: 'w3w-q2-cottrell-center',
-            title: '///unfortunately.airship.subscribers',
+            title: 'Decode the Second Tip',
             difficulty: 'easy',
             points: 15,
-            desc: 'Name this UNG building and what it houses.',
-            hints: [
-              { text: 'Both locations are UNG Dahlonega campus buildings.', cost: 2 },
-            ],
+            desc: 'A second note reads "**unfortunately airship subscribers**." Name this UNG building and what it houses.',
           },
         ],
       },
       {
         title: 'WHOIS / DNS Reconnaissance',
-        toolbox: [
-          { name: 'who.is', desc: 'Web-based WHOIS lookup.' },
-          { name: 'dig / nslookup', desc: '`dig A/MX/TXT/NS ungcyberunit.org`' },
-          { name: 'dnsdumpster.com', desc: 'Faster subdomain enumeration.' },
-        ],
         briefing: {
           sections: [
             {
@@ -348,9 +329,6 @@ export const ctfModules = [
             difficulty: 'medium',
             points: 10,
             desc: 'What nameservers does the domain use? What does this tell you about the hosting infrastructure?',
-            hints: [
-              { text: 'The nameservers tell you what CDN or hosting provider the domain uses.', cost: 2 },
-            ],
           },
           {
             id: 'wd-q5-a-record',
@@ -383,9 +361,6 @@ export const ctfModules = [
             points: 10,
             gradingMode: 'manual',
             desc: 'Try common prefixes (www, mail, blog, api, old, dev) against ungcyberunit.org. Which ones resolve?',
-            hints: [
-              { text: 'If WHOIS shows "REDACTED FOR PRIVACY," that\'s a finding in itself — note it.', cost: 2 },
-            ],
           },
         ],
       },
@@ -400,9 +375,6 @@ export const ctfModules = [
           desc: 'Start here, then find the link to the "old" 1999 site in the top navigation',
           icon: '🗄️',
         },
-        toolbox: [
-          { name: 'View Page Source (Ctrl+U)', desc: 'Check the <meta> tags.' },
-        ],
         briefing: {
           sections: [
             {
@@ -416,14 +388,12 @@ export const ctfModules = [
           {
             id: 'wa-q2-meta-email', title: 'Find the Meta-Tag Email', difficulty: 'medium', points: 10,
             desc: 'What email address is listed in the HTML meta tags of the main 1999 page? (View Page Source.)',
-            hints: [{ text: 'The <meta> tags in the <head> contain email, keywords, and editor info not visible on the rendered page.', cost: 2 }],
           },
           { id: 'wa-q3-html-editor', title: 'Find the HTML Editor', difficulty: 'easy', points: 5, desc: 'What HTML editor was used to build the site? (Check the meta tags.)' },
           { id: 'wa-q4-military-branch', title: 'Find the Military Branch', difficulty: 'easy', points: 5, desc: "What branch of the U.S. military did the author serve in?" },
           {
             id: 'wa-q5-home-address', title: "Find the Resume Address", difficulty: 'medium', points: 10,
             desc: "What was the author's home address (street, city, state, ZIP) per the resume page?",
-            hints: [{ text: "The resume page has the most sensitive information — address, phone, employment history.", cost: 2 }],
           },
           { id: 'wa-q6-places-lived', title: 'Find Places Lived', difficulty: 'medium', points: 10, gradingMode: 'manual', desc: "List three states or countries where the author has lived." },
           { id: 'wa-q7-favorite-book', title: 'Find the Favorite Book', difficulty: 'easy', points: 5, desc: "What is the author's favorite book, and who wrote it?" },
@@ -432,7 +402,6 @@ export const ctfModules = [
           {
             id: 'wa-q10-phone-bonus', title: 'BONUS: Decode the Phone Number', difficulty: 'hard', points: 15, gradingMode: 'manual',
             desc: 'What phone number appears on the resume? What area code is it, and what region does that area code cover?',
-            hints: [{ text: 'For the area-code lookup, just search the area code itself.', cost: 2 }],
           },
         ],
       },
@@ -483,18 +452,22 @@ export function challengeModuleMetaTags(m) {
   ].join('\n  ');
 }
 
-// One challenge-part card (the submit form, hints, points pill, etc.) —
-// extracted so a composite module (OSINT: one page, 4 sub-challenge
-// sections) can render several independently-numbered part lists, one per
-// section, instead of a single flat list.
+// A `**word word**` span inside a part's `desc` renders bold — the only
+// markup a challenge description can carry (e.g. the Geocoding section
+// embeds a three-word phrase this way instead of showing a raw
+// "///word.word.word" address). Escapes the whole string first, so the
+// `**...**` markers are matched against already-safe text; nothing here
+// introduces a new way to inject HTML.
+function renderDesc(desc) {
+  return escapeHtml(desc ?? '').replace(/\*\*(.+?)\*\*/g, '<strong class="lac-desc-highlight">$1</strong>');
+}
+
+// One challenge-part card (the submit form, points pill, etc.) — extracted
+// so a composite module (OSINT: one page, 4 sub-challenge sections) can
+// render several independently-numbered part lists, one per section,
+// instead of a single flat list.
 function renderPartsList(parts) {
   return (parts ?? []).map((p, i) => {
-    const hints = (p.hints ?? []).map((h, hi) => `
-            <div class="lac-hint" data-hint-index="${hi}" data-hint-cost="${h.cost ?? DEFAULT_HINT_COST}">
-              <button type="button" class="lac-hint-toggle">Hint ${hi + 1} (-${h.cost ?? DEFAULT_HINT_COST} pts)</button>
-              <p class="lac-hint-body" hidden></p>
-            </div>`).join('');
-
     const submit = p.gradingMode === 'manual' ? `
           <div class="lac-submit lac-submit--manual">
             <form class="lac-answer-form">
@@ -519,9 +492,8 @@ function renderPartsList(parts) {
             ${p.points != null ? `<span class="lac-points">${p.points} pts</span>` : ''}
           </div>
           <h3 class="lac-challenge-title">${escapeHtml(p.title)}</h3>
-          <p class="lac-challenge-desc">${escapeHtml(p.desc)}</p>
+          <p class="lac-challenge-desc">${renderDesc(p.desc)}</p>
           ${p.targetFile ? `<span class="lac-target-file"><span class="lac-target-label">Target file:</span> <span class="lac-target-name">${escapeHtml(p.targetFile)}</span></span>` : ''}
-          ${hints ? `<div class="lac-hints">${hints}</div>` : ''}
           ${p.gradingMode === 'manual' ? `<p class="lac-manual-note">This answer will be reviewed by an instructor.</p>` : ''}
           ${submit}
         </div>`;
@@ -746,8 +718,3 @@ export const CHALLENGE_PART_POINTS = Object.fromEntries(
     ])),
   ])
 );
-
-// Default point deduction for revealing one hint (OSINT lab, see POST
-// /api/challenges/:id/hints/reveal) — a part's own hint can override this
-// per-hint via its `cost` field.
-export const DEFAULT_HINT_COST = 2;

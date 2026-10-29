@@ -3519,14 +3519,9 @@ function initChallengeAnswerKeyToggle() {
 // /api/challenges/:id/submit) — nothing here knows what the right answer is.
 // `gradingMode="manual"` parts (OSINT lab's free-text/live-data questions)
 // get a distinct "pending review" state instead of correct/incorrect.
-//
-// Returns a small controller so initChallengeHints() can feed hint-point
-// deductions into the same running score summary, since both read/write the
-// same #challengeProgressSummary element.
 async function initChallengeSubmissions(challengeId) {
   const cards = document.querySelectorAll('.lac-challenge[data-part-id]');
-  const controller = { recordHintReveal() {} };
-  if (!cards.length) return controller;
+  if (!cards.length) return;
 
   let completed = new Set();
   let score = 0;
@@ -3555,11 +3550,6 @@ async function initChallengeSubmissions(challengeId) {
     }
   };
   updateSummary();
-
-  controller.recordHintReveal = (cost) => {
-    score -= cost;
-    updateSummary();
-  };
 
   const markCompleted = (submitWrap) => {
     submitWrap.innerHTML = '<p class="lac-completed-badge">✅ Completed</p>';
@@ -3629,68 +3619,6 @@ async function initChallengeSubmissions(challengeId) {
       } finally {
         btn.disabled = false;
       }
-    });
-  });
-
-  return controller;
-}
-
-// Reveal-for-cost hints (OSINT lab) — a `.lac-hint` block per part, each with
-// a toggle button that confirms the point cost before spending it. Already-
-// revealed hints (from a prior visit) are fetched once up front and shown
-// open immediately, same idempotent endpoint as a fresh reveal so there's
-// only one code path. `controller` (from initChallengeSubmissions) is how
-// the resulting point deduction reaches the shared score summary.
-async function initChallengeHints(challengeId, controller) {
-  const hintEls = document.querySelectorAll('.lac-hint');
-  if (!hintEls.length || !controller) return;
-
-  let alreadyRevealed = new Set();
-  if (currentUser) {
-    try {
-      const res = await fetch(`/api/challenges/${challengeId}/progress`);
-      if (res.ok) {
-        const data = await res.json();
-        alreadyRevealed = new Set((data.hintsRevealed || []).map(h => `${h.partId}:${h.hintIndex}`));
-      }
-    } catch { /* treat all hints as not-yet-revealed */ }
-  }
-
-  hintEls.forEach(async (hintEl) => {
-    const card = hintEl.closest('.lac-challenge[data-part-id]');
-    const partId = card?.dataset.partId;
-    const hintIndex = parseInt(hintEl.dataset.hintIndex, 10);
-    const cost = parseInt(hintEl.dataset.hintCost, 10) || 2;
-    const toggle = hintEl.querySelector('.lac-hint-toggle');
-    const body = hintEl.querySelector('.lac-hint-body');
-    if (!partId || !toggle || !body) return;
-
-    const reveal = async () => {
-      toggle.disabled = true;
-      try {
-        const res = await fetch(`/api/challenges/${challengeId}/hints/reveal`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ partId, hintIndex }),
-        });
-        if (!res.ok) { toggle.disabled = false; return; }
-        const data = await res.json();
-        body.textContent = data.text;
-        body.hidden = false;
-        toggle.remove();
-        if (!data.alreadyRevealed) controller.recordHintReveal(data.cost ?? cost);
-      } catch { toggle.disabled = false; }
-    };
-
-    if (alreadyRevealed.has(`${partId}:${hintIndex}`)) {
-      reveal();
-      return;
-    }
-
-    toggle.addEventListener('click', () => {
-      if (!currentUser) { openAuthModal('login'); return; }
-      if (!window.confirm(`Revealing this hint costs ${cost} points. Reveal?`)) return;
-      reveal();
     });
   });
 }
@@ -4901,7 +4829,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const challengeId = document.body.dataset.challengeId;
     if (challengeId) {
       initChallengeAnswerKeyToggle();
-      initChallengeSubmissions(challengeId).then(controller => initChallengeHints(challengeId, controller));
+      initChallengeSubmissions(challengeId);
       loadModuleLeaderboard(challengeId);
     }
   }
