@@ -4064,6 +4064,91 @@ describe('POST /api/challenges/:id/submit', () => {
     );
     assert.equal(res.status, 429);
   });
+
+  test('should log every attempt to challenge_submission_log, correct or not', async () => {
+    const cookie = await sessionCookieFor({ sub: 1, username: 'alice', role: 'member' });
+    const db = mockSubmitDB('fake-test-answer-xyz');
+
+    await worker.fetch(
+      new Request('https://example.com/api/challenges/log-analysis-regex/submit', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ partId: 'challenge-2', answer: 'wrong-guess' }),
+      }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+    await worker.fetch(
+      new Request('https://example.com/api/challenges/log-analysis-regex/submit', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify({ partId: 'challenge-2', answer: 'fake-test-answer-xyz' }),
+      }),
+      { JWT_SECRET: SECRET, DB: db },
+    );
+
+    const logInserts = db.calls.filter(c => c.op === 'run' && /INSERT INTO challenge_submission_log/.test(c.sql));
+    assert.equal(logInserts.length, 2, 'one log row per attempt, win or lose');
+    assert.equal(logInserts[0].bindings[1], 'alice'); // username
+    assert.equal(logInserts[0].bindings[5], 0); // incorrect
+    assert.equal(logInserts[1].bindings[5], 1); // correct
+  });
+});
+
+describe('GET /api/challenges/:id/submissions', () => {
+  function mockSubmissionLogDB(logRows, answerRows = []) {
+    return {
+      prepare(sql) {
+        return {
+          bind: (...bindings) => ({
+            first: async () => {
+              if (/SELECT token_version FROM users WHERE id = \?/.test(sql)) return { token_version: 0 };
+              return null;
+            },
+            all: async () => {
+              if (/FROM challenge_submission_log/.test(sql)) return { results: logRows };
+              if (/FROM challenge_answers/.test(sql)) return { results: answerRows };
+              return { results: [] };
+            },
+          }),
+        };
+      },
+    };
+  }
+
+  test('should reject a non-instructor', async () => {
+    const cookie = await sessionCookieFor({ sub: 1, username: 'alice', role: 'member' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/challenges/log-analysis-regex/submissions', { headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: mockSubmissionLogDB([]) },
+    );
+    assert.equal(res.status, 403);
+  });
+
+  test('should 404 for an unknown challenge id', async () => {
+    const cookie = await sessionCookieFor({ sub: 1, username: 'prof', role: 'instructor' });
+    const res = await worker.fetch(
+      new Request('https://example.com/api/challenges/no-such-challenge/submissions', { headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: mockSubmissionLogDB([]) },
+    );
+    assert.equal(res.status, 404);
+  });
+
+  test('should return logged submissions with accepted answers attached, for an instructor', async () => {
+    const cookie = await sessionCookieFor({ sub: 1, username: 'prof', role: 'instructor' });
+    const logRows = [
+      { id: 2, username: 'bob', part_id: 'challenge-2', answer_text: 'right-one', is_correct: 1, submitted_at: 2000 },
+      { id: 1, username: 'alice', part_id: 'challenge-2', answer_text: 'wrong-one', is_correct: 0, submitted_at: 1000 },
+    ];
+    const answerRows = [{ part_id: 'challenge-2', answer_norm: 'right-one' }];
+    const res = await worker.fetch(
+      new Request('https://example.com/api/challenges/log-analysis-regex/submissions', { headers: { Cookie: cookie } }),
+      { JWT_SECRET: SECRET, DB: mockSubmissionLogDB(logRows, answerRows) },
+    );
+    assert.equal(res.status, 200);
+    const { results } = await res.json();
+    assert.equal(results.length, 2);
+    assert.equal(results[0].username, 'bob');
+    assert.equal(results[0].isCorrect, 1);
+    assert.deepEqual(results[0].acceptedAnswers, ['right-one']);
+    assert.equal(results[1].username, 'alice');
+    assert.equal(results[1].isCorrect, 0);
+  });
 });
 
 describe('POST /api/lab/web-exploitation/login', () => {

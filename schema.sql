@@ -347,6 +347,29 @@ CREATE TABLE IF NOT EXISTS challenge_pending_answers (
   FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
+-- Full log of every challenge-answer submission attempt, correct or not —
+-- distinct from challenge_completions (first-correct-attempt only, one row
+-- per solved part) and challenge_submit_rate_limit (count-only, no content).
+-- Powers the instructor-only "who submitted what, when, pass/fail"
+-- GET /api/challenges/:id/submissions view. Same reasoning as audit_log: no
+-- FK to users(id), and username is a denormalized snapshot taken at insert
+-- time — this is an instructor audit trail, not the submitting user's own
+-- private data (unlike challenge_completions, which gets cascaded on
+-- account deletion), so it must survive that account being deleted.
+-- is_correct is NULL for instructor-graded (gradingMode: 'manual') parts,
+-- where there's no single right/wrong answer to check.
+CREATE TABLE IF NOT EXISTS challenge_submission_log (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id      INTEGER NOT NULL,
+  username     TEXT    NOT NULL,
+  challenge_id TEXT    NOT NULL,
+  part_id      TEXT    NOT NULL,
+  answer_text  TEXT    NOT NULL,
+  is_correct   INTEGER,
+  submitted_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_csl_challenge_ts ON challenge_submission_log (challenge_id, submitted_at);
+
 -- Kanban board (Jira replacement, see docs/plan-kanban-board.md). Shared,
 -- single board, instructor+-gated for both read and write (no per-creator
 -- ownership check — same shared-content trust model as announcements, not

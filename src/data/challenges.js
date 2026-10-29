@@ -651,6 +651,11 @@ export function renderChallengeModule(m) {
         <a class="btn btn-sm" href="/api/challenges/${m.id}/answer-key">Download Answer Key</a>
       </section>
 
+      <section class="instructor-section" id="submissionLogSection" hidden>
+        <h2 class="instructor-section-heading">// Submission Log</h2>
+        <div id="submissionLogTableWrap"></div>
+      </section>
+
       ${challengeModuleNavHtml(m.id)}`;
 }
 

@@ -3513,6 +3513,102 @@ function initChallengeAnswerKeyToggle() {
   section.hidden = !isInstructor();
 }
 
+// Instructor-only submission log (#submissionLogSection) — every logged
+// attempt (correct, incorrect, or instructor-graded) for this challenge,
+// sortable by time/user/section/result, with the accepted answer(s) shown
+// alongside each row. The real gate is server-side (requireRole on
+// GET /api/challenges/:id/submissions); this just controls visibility +
+// rendering. Same "fetch once, sort client-side" pattern as the admin
+// users table in initAdminPanel().
+async function initSubmissionLog(challengeId) {
+  const section = document.getElementById('submissionLogSection');
+  const wrap = document.getElementById('submissionLogTableWrap');
+  if (!section || !wrap) return;
+  if (!isInstructor()) { section.hidden = true; return; }
+  section.hidden = false;
+
+  let rows = [];
+  let sortCol = 'submittedAt';
+  let sortDir = 2; // newest first by default
+
+  const resultLabel = (r) => r.isCorrect === 1 ? '✅ Correct' : r.isCorrect === 0 ? '❌ Incorrect' : '⏳ Pending review';
+  const resultSortKey = (r) => r.isCorrect === 1 ? 2 : r.isCorrect === 0 ? 0 : 1;
+
+  function getSorted() {
+    if (sortDir === 0 || !sortCol) return rows;
+    return [...rows].sort((a, b) => {
+      let av, bv;
+      if (sortCol === 'submittedAt') { av = a.submittedAt; bv = b.submittedAt; }
+      else if (sortCol === 'username') { av = a.username.toLowerCase(); bv = b.username.toLowerCase(); }
+      else if (sortCol === 'section') { av = a.section.toLowerCase(); bv = b.section.toLowerCase(); }
+      else if (sortCol === 'result') { av = resultSortKey(a); bv = resultSortKey(b); }
+      if (av < bv) return sortDir === 1 ? -1 : 1;
+      if (av > bv) return sortDir === 1 ? 1 : -1;
+      return 0;
+    });
+  }
+
+  function render() {
+    const sorted = getSorted();
+    if (!rows.length) {
+      wrap.innerHTML = `<p style="color:var(--text-muted);font-family:'Share Tech Mono',monospace;">No submissions yet.</p>`;
+      return;
+    }
+    const thClass = (col) => {
+      const base = 'sortable';
+      if (sortCol === col) return base + (sortDir === 1 ? ' sort-asc' : sortDir === 2 ? ' sort-desc' : '');
+      return base;
+    };
+    wrap.innerHTML = `
+      <table class="admin-table" role="table" aria-label="Submission log">
+        <thead>
+          <tr>
+            <th class="${thClass('submittedAt')}" data-sort="submittedAt">Time</th>
+            <th class="${thClass('username')}" data-sort="username">User</th>
+            <th class="${thClass('section')}" data-sort="section">Section</th>
+            <th class="${thClass('result')}" data-sort="result">Result</th>
+            <th>Answer Submitted</th>
+            <th>Accepted Answer(s)</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${sorted.map(r => `
+            <tr>
+              <td style="color:var(--text-muted);font-size:0.8rem;white-space:nowrap;">${new Date(r.submittedAt).toLocaleString()}</td>
+              <td><a href="/u/${encodeURIComponent(r.username)}" class="admin-user-link">${escHtml(r.username)}</a></td>
+              <td>${escHtml(r.section)}</td>
+              <td style="white-space:nowrap;">${resultLabel(r)}</td>
+              <td>${escHtml(r.answer)}</td>
+              <td style="color:var(--text-muted);">${r.acceptedAnswers.length ? escHtml(r.acceptedAnswers.join(' / ')) : '—'}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>`;
+
+    wrap.querySelectorAll('th[data-sort]').forEach(th => {
+      th.addEventListener('click', () => {
+        const col = th.dataset.sort;
+        if (sortCol === col) {
+          sortDir = sortDir === 1 ? 2 : sortDir === 2 ? 0 : 1;
+          if (sortDir === 0) sortCol = null;
+        } else {
+          sortCol = col;
+          sortDir = 1;
+        }
+        render();
+      });
+    });
+  }
+
+  try {
+    const res = await fetch(`/api/challenges/${challengeId}/submissions`);
+    if (!res.ok) throw new Error();
+    rows = (await res.json()).results ?? [];
+    render();
+  } catch {
+    wrap.innerHTML = `<p style="color:var(--danger);font-family:'Share Tech Mono',monospace;">Failed to load submission log.</p>`;
+  }
+}
+
 // Auto-graded answer submission + persisted completion state for challenge
 // pages. Each .lac-challenge card is a "part" (data-part-id); correct
 // answers are checked and stored entirely server-side (POST
@@ -4813,10 +4909,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   } else if (window.location.pathname === '/log-analysis-challenge') {
     initChallengeAnswerKeyToggle();
     initChallengeSubmissions('log-analysis-regex');
+    initSubmissionLog('log-analysis-regex');
     loadModuleLeaderboard('log-analysis-regex');
   } else if (window.location.pathname === '/network-traffic-challenge') {
     initChallengeAnswerKeyToggle();
     initChallengeSubmissions('wireshark-nta');
+    initSubmissionLog('wireshark-nta');
     loadModuleLeaderboard('wireshark-nta');
   } else if (window.location.pathname === '/challenges') {
     initChallengesHub();
@@ -4830,6 +4928,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (challengeId) {
       initChallengeAnswerKeyToggle();
       initChallengeSubmissions(challengeId);
+      initSubmissionLog(challengeId);
       loadModuleLeaderboard(challengeId);
     }
   }
