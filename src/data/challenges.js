@@ -245,6 +245,7 @@ export const ctfModules = [
             difficulty: 'medium',
             points: 15,
             desc: 'Name the landmark in Image 1 and where it is.',
+            answerFormat: 'Landmark Name, City, Country',
           },
           {
             id: 'ri-q2-image-two',
@@ -252,6 +253,7 @@ export const ctfModules = [
             difficulty: 'medium',
             points: 15,
             desc: 'Name the monument in Image 2 and what it honors.',
+            answerFormat: 'Monument Name, Who It Honors',
           },
         ],
       },
@@ -278,6 +280,7 @@ export const ctfModules = [
             difficulty: 'easy',
             points: 15,
             desc: 'An anonymous note gives a location only as "**stepfather animates astonish**." Name this UNG building and its common nickname.',
+            answerFormat: 'Building Name, Nickname',
           },
           {
             id: 'w3w-q2-cottrell-center',
@@ -285,6 +288,7 @@ export const ctfModules = [
             difficulty: 'easy',
             points: 15,
             desc: 'A second note reads "**unfortunately airship subscribers**." Name this UNG building and what it houses.',
+            answerFormat: 'Building Name, What It Houses',
           },
         ],
       },
@@ -308,6 +312,7 @@ export const ctfModules = [
             difficulty: 'easy',
             points: 5,
             desc: 'Who is the registrar for ungcyberunit.org?',
+            answerFormat: 'Registrar Name',
           },
           {
             id: 'wd-q2-created',
@@ -315,6 +320,7 @@ export const ctfModules = [
             difficulty: 'easy',
             points: 5,
             desc: 'When was the domain first registered?',
+            answerFormat: 'Month DD, YYYY',
           },
           {
             id: 'wd-q3-expires',
@@ -322,6 +328,7 @@ export const ctfModules = [
             difficulty: 'easy',
             points: 5,
             desc: 'When does the registration expire?',
+            answerFormat: 'Month DD, YYYY',
           },
           {
             id: 'wd-q4-nameservers',
@@ -329,6 +336,7 @@ export const ctfModules = [
             difficulty: 'medium',
             points: 10,
             desc: 'What nameservers does the domain use? What does this tell you about the hosting infrastructure?',
+            answerFormat: 'ns1.example.com, ns2.example.com',
           },
           {
             id: 'wd-q5-a-record',
@@ -337,6 +345,7 @@ export const ctfModules = [
             points: 5,
             gradingMode: 'manual',
             desc: 'What is the A record (IP address) for ungcyberunit.org? (`dig A ungcyberunit.org` or nslookup — this can change, so it\'s reviewed rather than auto-checked.)',
+            answerFormat: 'x.x.x.x',
           },
           {
             id: 'wd-q6-mx-record',
@@ -345,6 +354,7 @@ export const ctfModules = [
             points: 5,
             gradingMode: 'manual',
             desc: 'Are there MX records (mail servers)? If so, what service handles email? (`dig MX ungcyberunit.org`)',
+            answerFormat: 'Yes/No, Service Name',
           },
           {
             id: 'wd-q7-txt-record',
@@ -353,6 +363,7 @@ export const ctfModules = [
             points: 5,
             gradingMode: 'manual',
             desc: 'Are there any TXT records? What can you learn from them (SPF policy, domain verification, etc.)? (`dig TXT ungcyberunit.org`)',
+            answerFormat: 'Record Type: What It Shows',
           },
           {
             id: 'wd-q8-subdomains',
@@ -361,6 +372,7 @@ export const ctfModules = [
             points: 10,
             gradingMode: 'manual',
             desc: 'Try common prefixes (www, mail, blog, api, old, dev) against ungcyberunit.org. Which ones resolve?',
+            answerFormat: 'subdomain1, subdomain2, ...',
           },
         ],
       },
@@ -384,24 +396,27 @@ export const ctfModules = [
           ],
         },
         parts: [
-          { id: 'wa-q1-author-name', title: "Find the Author's Name", difficulty: 'easy', points: 5, desc: "What is the site author's full name?" },
+          { id: 'wa-q1-author-name', title: "Find the Author's Name", difficulty: 'easy', points: 5, desc: "What is the site author's full name?", answerFormat: 'First Last' },
           {
             id: 'wa-q2-meta-email', title: 'Find the Meta-Tag Email', difficulty: 'medium', points: 10,
             desc: 'What email address is listed in the HTML meta tags of the main 1999 page? (View Page Source.)',
+            answerFormat: 'email@domain.com',
           },
-          { id: 'wa-q3-html-editor', title: 'Find the HTML Editor', difficulty: 'easy', points: 5, desc: 'What HTML editor was used to build the site? (Check the meta tags.)' },
-          { id: 'wa-q4-military-branch', title: 'Find the Military Branch', difficulty: 'easy', points: 5, desc: "What branch of the U.S. military did the author serve in?" },
+          { id: 'wa-q3-html-editor', title: 'Find the HTML Editor', difficulty: 'easy', points: 5, desc: 'What HTML editor was used to build the site? (Check the meta tags.)', answerFormat: 'Editor Name Version' },
+          { id: 'wa-q4-military-branch', title: 'Find the Military Branch', difficulty: 'easy', points: 5, desc: "What branch of the U.S. military did the author serve in?", answerFormat: 'Branch Name' },
           {
             id: 'wa-q5-home-address', title: "Find the Resume Address", difficulty: 'medium', points: 10,
             desc: "What was the author's home address (street, city, state, ZIP) per the resume page?",
+            answerFormat: 'Street, City, State ZIP',
           },
-          { id: 'wa-q6-places-lived', title: 'Find Places Lived', difficulty: 'medium', points: 10, gradingMode: 'manual', desc: "List three states or countries where the author has lived." },
-          { id: 'wa-q7-favorite-book', title: 'Find the Favorite Book', difficulty: 'easy', points: 5, desc: "What is the author's favorite book, and who wrote it?" },
-          { id: 'wa-q8-favorite-movie', title: 'Find the Favorite Movie', difficulty: 'easy', points: 5, desc: "What is the author's favorite movie — specifically, the one made in 1992?" },
-          { id: 'wa-q9-hobbies', title: 'Find Two Unexpected Hobbies', difficulty: 'easy', points: 5, gradingMode: 'manual', desc: "Name two hobbies from the site that you wouldn't expect." },
+          { id: 'wa-q6-places-lived', title: 'Find Places Lived', difficulty: 'medium', points: 10, gradingMode: 'manual', desc: "List three states or countries where the author has lived.", answerFormat: 'Place 1, Place 2, Place 3' },
+          { id: 'wa-q7-favorite-book', title: 'Find the Favorite Book', difficulty: 'easy', points: 5, desc: "What is the author's favorite book, and who wrote it?", answerFormat: 'Book Title, Author Name' },
+          { id: 'wa-q8-favorite-movie', title: 'Find the Favorite Movie', difficulty: 'easy', points: 5, desc: "What is the author's favorite movie — specifically, the one made in 1992?", answerFormat: 'Movie Title' },
+          { id: 'wa-q9-hobbies', title: 'Find Two Unexpected Hobbies', difficulty: 'easy', points: 5, gradingMode: 'manual', desc: "Name two hobbies from the site that you wouldn't expect.", answerFormat: 'Hobby 1, Hobby 2' },
           {
             id: 'wa-q10-phone-bonus', title: 'BONUS: Decode the Phone Number', difficulty: 'hard', points: 15, gradingMode: 'manual',
             desc: 'What phone number appears on the resume? What area code is it, and what region does that area code cover?',
+            answerFormat: '(XXX) XXX-XXXX, Region',
           },
         ],
       },
@@ -468,17 +483,25 @@ function renderDesc(desc) {
 // instead of a single flat list.
 function renderPartsList(parts) {
   return (parts ?? []).map((p, i) => {
+    // The expected answer SHAPE, not the answer itself (e.g. "Landmark
+    // Name, City, Country") — shown as both a persistent format hint under
+    // the question and the input's placeholder, so the format stays visible
+    // while typing stomps the placeholder away. Falls back to the old
+    // generic placeholders when a part doesn't define one.
+    const placeholder = escapeHtml(p.answerFormat ?? (p.gradingMode === 'manual' ? 'Your answer' : 'Your flag'));
+    const formatHint = p.answerFormat ? `<p class="lac-answer-format">Format: <span>${escapeHtml(p.answerFormat)}</span></p>` : '';
+
     const submit = p.gradingMode === 'manual' ? `
           <div class="lac-submit lac-submit--manual">
             <form class="lac-answer-form">
-              <input type="text" class="lac-answer-input" placeholder="Your answer" aria-label="Your answer" autocomplete="off" maxlength="200">
+              <input type="text" class="lac-answer-input" placeholder="${placeholder}" aria-label="Your answer" autocomplete="off" maxlength="200">
               <button type="submit" class="btn btn-sm">Save</button>
             </form>
             <p class="lac-answer-feedback" hidden></p>
           </div>` : `
           <div class="lac-submit">
             <form class="lac-answer-form">
-              <input type="text" class="lac-answer-input" placeholder="Your flag" aria-label="Your answer" autocomplete="off" maxlength="200">
+              <input type="text" class="lac-answer-input" placeholder="${placeholder}" aria-label="Your answer" autocomplete="off" maxlength="200">
               <button type="submit" class="btn btn-sm">Submit</button>
             </form>
             <p class="lac-answer-feedback" hidden></p>
@@ -494,6 +517,7 @@ function renderPartsList(parts) {
           <h3 class="lac-challenge-title">${escapeHtml(p.title)}</h3>
           <p class="lac-challenge-desc">${renderDesc(p.desc)}</p>
           ${p.targetFile ? `<span class="lac-target-file"><span class="lac-target-label">Target file:</span> <span class="lac-target-name">${escapeHtml(p.targetFile)}</span></span>` : ''}
+          ${formatHint}
           ${p.gradingMode === 'manual' ? `<p class="lac-manual-note">This answer will be reviewed by an instructor.</p>` : ''}
           ${submit}
         </div>`;
@@ -546,19 +570,23 @@ function renderSectionBody(s, { includeSummary = true } = {}) {
         <div class="lac-downloads">${downloads}</div>
       </section>` : '';
 
-  // Image galleries (e.g. the OSINT reverse-image-search challenge) — the
-  // files themselves are a manual TODO (see Implementation Guide.md: can't
-  // source/host copyrighted landmark photos here), so this renders the slot
-  // and caption now; a broken-image icon is expected until the real files
-  // land at /assets/labs/osint/images/.
+  // Image galleries (e.g. the OSINT reverse-image-search challenge) — each
+  // image is wrapped in a download link so students can pull the full-res
+  // file for reverse-searching locally, not just the scaled-down thumbnail
+  // shown on the page.
   const imagesSection = (s.images?.length) ? `
       <section class="instructor-section">
         <h2 class="instructor-section-heading">// Images</h2>
         <div class="lac-image-gallery">
           ${s.images.map((img, i) => `
           <figure class="card lac-image-card">
-            <img src="/assets/labs/osint/images/${escapeHtml(img.filename)}" alt="${escapeHtml(img.caption ?? `Image ${i + 1}`)}" loading="lazy">
-            <figcaption>${escapeHtml(img.caption ?? `Image ${i + 1}`)}</figcaption>
+            <a href="/assets/labs/osint/images/${escapeHtml(img.filename)}" download class="lac-image-link">
+              <img src="/assets/labs/osint/images/${escapeHtml(img.filename)}" alt="${escapeHtml(img.caption ?? `Image ${i + 1}`)}" loading="lazy">
+            </a>
+            <figcaption>
+              ${escapeHtml(img.caption ?? `Image ${i + 1}`)}
+              <a href="/assets/labs/osint/images/${escapeHtml(img.filename)}" download class="lac-image-download">⬇ Download</a>
+            </figcaption>
           </figure>`).join('')}
         </div>
       </section>` : '';

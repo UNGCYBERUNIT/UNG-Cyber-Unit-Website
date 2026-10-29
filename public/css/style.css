@@ -3986,6 +3986,14 @@ footer {
 
 .lac-desc-highlight { color: var(--accent); }
 
+.lac-answer-format {
+  margin: 0.4rem 0 0;
+  font-size: 0.78rem;
+  font-family: 'Share Tech Mono', monospace;
+  color: var(--text-muted);
+}
+.lac-answer-format span { color: var(--text); }
+
 .lac-manual-note {
   margin: 0.4rem 0 0;
   font-size: 0.78rem;
@@ -4011,6 +4019,9 @@ footer {
   padding: 0.6rem;
   text-align: center;
 }
+.lac-image-link {
+  display: block;
+}
 .lac-image-card img {
   display: block;
   width: 100%;
@@ -4022,12 +4033,23 @@ footer {
   background: #1a1a1a;
   border-radius: 4px;
   border: 1px solid var(--border);
+  transition: border-color 0.15s;
 }
+.lac-image-link:hover img { border-color: var(--accent); }
 .lac-image-card figcaption {
   margin-top: 0.4rem;
   font-size: 0.78rem;
   color: var(--text-muted);
 }
+.lac-image-download {
+  display: block;
+  margin-top: 0.2rem;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.72rem;
+  color: var(--accent);
+  text-decoration: none;
+}
+.lac-image-download:hover { text-decoration: underline; }
 
 /* Composite module (e.g. OSINT: one page/card, 4 sub-challenge sections) —
    each section is a native <details>/<summary> disclosure (no JS needed,
