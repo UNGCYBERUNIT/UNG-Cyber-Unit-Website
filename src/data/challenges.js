@@ -347,33 +347,14 @@ export const ctfModules = [
             desc: 'What is the A record (IP address) for ungcyberunit.org? (`dig A ungcyberunit.org` or nslookup — this can change, so it\'s reviewed rather than auto-checked.)',
             answerFormat: 'x.x.x.x',
           },
-          {
-            id: 'wd-q6-mx-record',
-            title: 'Find the MX Records',
-            difficulty: 'easy',
-            points: 5,
-            gradingMode: 'manual',
-            desc: 'Are there MX records (mail servers)? If so, what service handles email? (`dig MX ungcyberunit.org`)',
-            answerFormat: 'Yes/No, Service Name',
-          },
-          {
-            id: 'wd-q7-txt-record',
-            title: 'Find the TXT Records',
-            difficulty: 'easy',
-            points: 5,
-            gradingMode: 'manual',
-            desc: 'Are there any TXT records? What can you learn from them (SPF policy, domain verification, etc.)? (`dig TXT ungcyberunit.org`)',
-            answerFormat: 'Record Type: What It Shows',
-          },
-          {
-            id: 'wd-q8-subdomains',
-            title: 'Discover Subdomains',
-            difficulty: 'medium',
-            points: 10,
-            gradingMode: 'manual',
-            desc: 'Try common prefixes (www, mail, blog, api, old, dev) against ungcyberunit.org. Which ones resolve?',
-            answerFormat: 'subdomain1, subdomain2, ...',
-          },
+          // TODO (pending Joshua): MX records / TXT records / Subdomains
+          // questions removed 2026-10-30 — need real content/answer keys
+          // before they go back in. Reuse the ids below (wd-q6/-q7/-q8) when
+          // re-adding so any historical challenge_submission_log /
+          // challenge_pending_answers rows for them still line up.
+          //   wd-q6-mx-record    — 'Find the MX Records'
+          //   wd-q7-txt-record   — 'Find the TXT Records'
+          //   wd-q8-subdomains   — 'Discover Subdomains'
         ],
       },
       {
